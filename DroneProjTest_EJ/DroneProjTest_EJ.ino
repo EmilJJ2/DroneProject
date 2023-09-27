@@ -1,11 +1,13 @@
 #include <Wire.h>
 const int MPU = 0x68; // MPU6050 I2C address
 float AccX, AccY, AccZ;
-float GyroX, GyroY, GyroZ;
+float GyroX, GyroY, GyroZ, GyroX_final;
 float accAngleX, accAngleY, gyroAngleX, gyroAngleY, gyroAngleZ;
 float roll, pitch, yaw;
 float AccErrorX, AccErrorY, GyroErrorX, GyroErrorY, GyroErrorZ;
+float total_bias;
 float elapsedTime, currentTime, previousTime;
+int count = 0;
 int c = 0;
 
 
@@ -68,11 +70,27 @@ void loop() {
   // Gyro current Angle Calculate
   // Integrates the change in gyro angle over time 
   // deg = deg + (deg/s)*s
-  gyroAngleX = gyroAngleX + GyroX*elapsedTime; 
+  if(count<200){
+    total_bias = GyroX + total_bias;
+    count++;
+  }
+  else{
+    GyroX_final = GyroX - total_bias/200;
+
+  gyroAngleX = gyroAngleX - GyroX_final*elapsedTime;
   gyroAngleY = gyroAngleY + GyroY*elapsedTime;
   
   // COMPLIMENTARY FILTER
   roll = 0.99 * gyroAngleX + 0.01 * accAngleX;
-  Serial.println();
-
+  Serial.print(GyroX);
+  Serial.print("  ");
+  Serial.print(total_bias/100);
+  Serial.print("  ");
+  Serial.print(accAngleX);
+  Serial.print("  ");
+  Serial.println(gyroAngleX);
+  //Serial.print("  ");
+  //Serial.println(roll);
+  }
 }
+ 
