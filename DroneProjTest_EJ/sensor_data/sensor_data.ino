@@ -15,6 +15,7 @@ float AccErrorX, AccErrorY, GyroErrorX, GyroErrorY, GyroErrorZ;
 float elapsedTime, currentTime, previousTime;
 int c = 0;
 int count = 0;
+int bias_const = 200;
 
 float IIRFilter(float previous_value, float current_value) {
   float alpha = 0.2;
@@ -56,6 +57,10 @@ void loop() {
   AccY_prev = AccY_curr;
   AccZ_prev = AccZ_curr;
 
+  GyroX_prev = GyroX_curr;
+  GyroY_prev = GyroY_curr;
+  GyroZ_prev = GyroZ_curr;
+
   // Time Tracker | This is to keep track of time to integrate the Gyro output
   previousTime = currentTime;        // Previous time is stored before the actual time read
   currentTime = millis();            // Current time actual time read
@@ -82,7 +87,7 @@ void loop() {
   
   // Bias removal [Must occur after RAW data retrieval and before RAW data is used]
   // This counts the first 200 data values and uses them to set the expected initial values
-  if (count < 200) {
+  if (count < bias_const) {
     // Finds Bias
     AccX_bias += AccX_raw;
     AccY_bias += AccY_raw;
@@ -96,25 +101,25 @@ void loop() {
     count++;
   } else {
     // Removes Bias
-    AccX_raw -= (AccX_bias / 200);
-    AccY_raw -= (AccY_bias / 200);
-    AccZ_raw -= (AccZ_bias / 200) - 1;
-    /*
-    GyroX_raw -= (GyroX_bias / 200); // This was not working for some reason so it is commented out
-    GyroY_raw -= (GyroY_bias / 200); 
-    GyroZ_raw -= (GyroZ_bias / 200);
-    */
+    AccX_raw -= (AccX_bias / bias_const);
+    AccY_raw -= (AccY_bias / bias_const);
+    AccZ_raw -= (AccZ_bias / bias_const) - 1;
+    
+    GyroX_raw -= (GyroX_bias / bias_const);
+    GyroY_raw -= (GyroY_bias / bias_const); 
+    GyroZ_raw -= (GyroZ_bias / bias_const);
+    
   }
 
   // IIR Filter
   AccX_curr = IIRFilter(AccX_raw, AccX_prev);
   AccY_curr = IIRFilter(AccY_raw, AccY_prev);
   AccZ_curr = IIRFilter(AccZ_raw, AccZ_prev);
-  /*
+  
   GyroX_curr = IIRFilter(GyroX_raw, GyroX_prev); // This was not working for some reason so it is commented out
   GyroY_curr = IIRFilter(GyroY_raw, GyroY_prev);
   GyroZ_curr = IIRFilter(GyroZ_raw, GyroZ_prev);
-  */
+  
 
   // Accel Angle Calculations
   accAngleY = atan(-AccX_curr/sqrt(AccY_curr*AccY_curr + AccZ_curr*AccZ_curr)) * 180 / mPI;
@@ -123,13 +128,13 @@ void loop() {
   // Gyro Angle Calculations
   // Integrates the change in gyro angle over time || NOT ACCURATE
   // deg = deg + (deg/s)*s
-  gyroAngleX = gyroAngleX + GyroX_curr*elapsedTime;  // Gyro math not working for some reason so this may not be accurate
+  gyroAngleX = gyroAngleX + GyroX_curr*elapsedTime;  // Still drags a lot of error with it
   gyroAngleY = gyroAngleY + GyroY_curr*elapsedTime;
 
   // COMPLIMENTARY FILTER | This is also not really working that well right now
   roll = 0.99 * gyroAngleX + 0.01 * accAngleX;
 
-  Serial.print(gyroAngleY);
+  Serial.print(accAngleX);
   Serial.print(" / ");
   Serial.println(gyroAngleX);
 
