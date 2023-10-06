@@ -2,7 +2,7 @@ unsigned long int time_inbetween;
 int pitch_input, roll_input, yaw_input, elevator_input, power_input;
 bool power_switch = false;
 
-int x[15], ppm[15], ch[7], store_x;
+int sx[15], ppm[15], ch[7], store_x;
 //Define Variables
 //specifing  arrays and variables to store values 
 
@@ -75,11 +75,11 @@ void StoreValuesRemote(){ //Copy  store all values from temporary array another 
   a = micros(); //store time value a when pin value falling
   c = a - time_inbetween;      //calculating  time inbetween two peaks
   time_inbetween = a;        // 
-  x[store_x]=c;     //storing 15 value in  array
+  sx[store_x]=c;     //storing 15 value in  array
   store_x = store_x + 1;
   if(store_x==15){
     for(int j=0;j<15;j++){
-      ppm[j]=x[j];
+      ppm[j]=sx[j];
     }
     store_x = 0;
   }
