@@ -1,10 +1,9 @@
-unsigned long int time_inbetween;
 int pitch_input, roll_input, yaw_input, elevator_input, power_input;
 bool power_switch = false;
 
-int sx[15], ppm[15], ch[7], store_x;
-//Define Variables
-//specifing  arrays and variables to store values 
+// Variables for Remote
+unsigned long int time_inbetween;
+int strx[15], ppm[15], ch[7], store_x; //specifing  arrays and variables to store values 
 
 void setup() {
   Serial.begin(19200);
@@ -13,11 +12,13 @@ void setup() {
 
 void loop() {
   GetRemoteValue();
+  /*
   Serial.print("roll: ");Serial.print(roll_input);Serial.print("\	");
   Serial.print("elev: ");Serial.print(elevator_input);Serial.print("\	");
   Serial.print("pitch: ");Serial.print(pitch_input);Serial.print("\	");
   Serial.print("yaw: ");Serial.print(yaw_input);Serial.print("\	");
   Serial.print("Power: ");Serial.print(power_switch);Serial.println("\	");
+  */
 }
 
 void SetRemoteInput(){ //Set Remote Input
@@ -75,11 +76,11 @@ void StoreValuesRemote(){ //Copy  store all values from temporary array another 
   a = micros(); //store time value a when pin value falling
   c = a - time_inbetween;      //calculating  time inbetween two peaks
   time_inbetween = a;        // 
-  sx[store_x]=c;     //storing 15 value in  array
+  strx[store_x]=c;     //storing 15 value in  array
   store_x = store_x + 1;
   if(store_x==15){
     for(int j=0;j<15;j++){
-      ppm[j]=sx[j];
+      ppm[j]=strx[j];
     }
     store_x = 0;
   }
