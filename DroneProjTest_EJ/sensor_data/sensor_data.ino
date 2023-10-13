@@ -136,6 +136,8 @@ void loop() {
 
   Serial.print(accAngleX);
   Serial.print(" / ");
-  Serial.println(gyroAngleX);
+  Serial.print(gyroAngleX);
+  Serial.print(" / ");
+  Serial.println(roll);
 
 }
