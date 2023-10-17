@@ -1,21 +1,15 @@
 #include <Wire.h>
 
 const int MPU = 0x68; // MPU6050 I2C address
-float AccX_raw, AccY_raw, AccZ_raw;
-float AccX_curr, AccY_curr, AccZ_curr;
-float AccX_prev, AccY_prev, AccZ_prev;
-float AccX_bias, AccY_bias, AccZ_bias;
-float GyroX_raw, GyroY_raw, GyroZ_raw;
-float GyroX_curr, GyroY_curr, GyroZ_curr;
-float GyroX_prev, GyroY_prev, GyroZ_prev;
-float GyroX_bias, GyroY_bias, GyroZ_bias;
-float accAngleX, accAngleY, gyroAngleX, gyroAngleY, gyroAngleZ;
+
+float AccX_curr, AccY_curr, AccZ_curr, AccX_prev, AccY_prev, AccZ_prev, AccX_bias, AccY_bias, AccZ_bias;
+float GyroX_curr, GyroY_curr, GyroZ_curr, GyroX_prev, GyroY_prev, GyroZ_prev, GyroX_bias, GyroY_bias, GyroZ_bias;
+float acc_Angle_X, acc_Angle_Y, gyro_Angle_X, gyro_Angle_Y, gyro_Angle_Z;
 float roll, pitch, yaw;
-float AccErrorX, AccErrorY, GyroErrorX, GyroErrorY, GyroErrorZ;
-float elapsedTime, currentTime, previousTime;
-int c = 0;
+float Acc_Error_X, Acc_Error_Y, Gyro_Error_X, Gyro_Error_Y, Gyro_Error_Z;
+float elapsed_Time, current_Time, previous_Time;
 int count = 0;
-int bias_const = 200;
+
 
 float IIRFilter(float previous_value, float current_value) {
   float alpha = 0.2;
@@ -50,7 +44,18 @@ void setup() {
 }
 
 void loop() {
+  GetSensorData();
+
+}
+
+void GetSensorData() {
+
+  float AccX_raw, AccY_raw, AccZ_raw;
+  float GyroX_raw, GyroY_raw, GyroZ_raw;
   float mPI = 3.141592653;
+  float SSF_acc_val = 16384.0; // Sensitivity Sensor Factor for the accelerometer from the datasheet
+  float SSF_gyro_val = 131; // Sensitivity Sensor Factor for the gyroscope from the datasheet
+  int bias_const = 200;
 
   // Set previous values | This is to keep track of the values found in both the current loop and the last loop for the IIR Filter
   AccX_prev = AccX_curr;
@@ -62,9 +67,9 @@ void loop() {
   GyroZ_prev = GyroZ_curr;
 
   // Time Tracker | This is to keep track of time to integrate the Gyro output
-  previousTime = currentTime;        // Previous time is stored before the actual time read
-  currentTime = millis();            // Current time actual time read
-  elapsedTime = (currentTime - previousTime) / 1000; // Convert to seconds
+  previous_Time = current_Time;        // Previous time is stored before the actual time read
+  current_Time = millis();            // Current time actual time read
+  elapsed_Time = (current_Time - previous_Time) / 1000; // Convert to seconds
   
   // Read accelerometer data | Accelerometer outputs in g units. So a reading of a means a*(9.8 m/s^2)
   Wire.beginTransmission(MPU);
@@ -72,18 +77,18 @@ void loop() {
   Wire.endTransmission(false);
   Wire.requestFrom(MPU, 6, true); // Read 6 registers total, each axis value is stored in 2 registers
   //For a range of +-2g, we need to divide the raw values by 16384, according to the datasheet
-  AccX_raw = (Wire.read() << 8 | Wire.read()) / 16384.0; // X-axis value
-  AccY_raw = (Wire.read() << 8 | Wire.read()) / 16384.0; // Y-axis value
-  AccZ_raw = (Wire.read() << 8 | Wire.read()) / 16384.0; // Z-axis value
+  AccX_raw = (Wire.read() << 8 | Wire.read()) / SSF_acc_val; // X-axis value
+  AccY_raw = (Wire.read() << 8 | Wire.read()) / SSF_acc_val; // Y-axis value
+  AccZ_raw = (Wire.read() << 8 | Wire.read()) / SSF_acc_val; // Z-axis value
   
   // Read gyro data | Gyro outputs in deg/s
   Wire.beginTransmission(MPU);
   Wire.write(0x43); // Gyro data first register address 0x43
   Wire.endTransmission(false);
   Wire.requestFrom(MPU, 6, true); // Read 4 registers total, each axis value is stored in 2 registers
-  GyroX_raw = (Wire.read() << 8 | Wire.read()) / 131; // For a 250deg/s range we have to divide first the raw value by 131.0, according to the datasheet
-  GyroY_raw = (Wire.read() << 8 | Wire.read()) / 131; // The higher the range, the less precise the returned degree value
-  GyroZ_raw = (Wire.read() << 8 | Wire.read()) / 131;
+  GyroX_raw = (Wire.read() << 8 | Wire.read()) / SSF_gyro_val; // For a 250deg/s range we have to divide first the raw value by 131.0, according to the datasheet
+  GyroY_raw = (Wire.read() << 8 | Wire.read()) / SSF_gyro_val; // The higher the range, the less precise the returned degree value
+  GyroZ_raw = (Wire.read() << 8 | Wire.read()) / SSF_gyro_val;
   
   // Bias removal [Must occur after RAW data retrieval and before RAW data is used]
   // This counts the first 200 data values and uses them to set the expected initial values
@@ -122,20 +127,16 @@ void loop() {
   
 
   // Accel Angle Calculations
-  accAngleY = atan(-AccX_curr/sqrt(AccY_curr*AccY_curr + AccZ_curr*AccZ_curr)) * 180 / mPI;
-  accAngleX = atan(AccY_curr/sqrt(AccX_curr*AccX_curr + AccZ_curr*AccZ_curr)) * 180 / mPI;
+  acc_Angle_Y = atan(-AccX_curr/sqrt(AccY_curr*AccY_curr + AccZ_curr*AccZ_curr)) * 180 / mPI;
+  acc_Angle_X = atan(AccY_curr/sqrt(AccX_curr*AccX_curr + AccZ_curr*AccZ_curr)) * 180 / mPI;
 
   // Gyro Angle Calculations
   // Integrates the change in gyro angle over time || NOT ACCURATE
   // deg = deg + (deg/s)*s
-  gyroAngleX = gyroAngleX + GyroX_curr*elapsedTime;  // Still drags a lot of error with it
-  gyroAngleY = gyroAngleY + GyroY_curr*elapsedTime;
+  gyro_Angle_X = gyro_Angle_X + GyroX_curr*elapsed_Time;  // Still drags a lot of error with it
+  gyro_Angle_Y = gyro_Angle_Y + GyroY_curr*elapsed_Time;
 
   // COMPLIMENTARY FILTER | This is also not really working that well right now
-  roll = 0.99 * gyroAngleX + 0.01 * accAngleX;
-
-  Serial.print(accAngleX);
-  Serial.print(" / ");
-  Serial.println(gyroAngleX);
+  roll = 0.99 * gyro_Angle_X + 0.01 * acc_Angle_X;
 
 }
