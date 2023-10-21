@@ -1,31 +1,43 @@
 // || INCLUDES || //
 #include <Servo.h>
 #include <Wire.h>
+#include <Integrator.h>
+#include <PID.h>
 
+// ||||||||||||||||||||||| //
 // || SET GLOBAL VALUES || //
+// ||||||||||||||||||||||| //
 
 #define MIN_PULSE_LENGTH 1000 // Minimum motor pulse length in µs
 #define MID_PULSE_LENGTH 1500 // Middle motor pulse length in µs
 #define MAX_PULSE_LENGTH 2000 // Maximum motor pulse length in µs
 
 Servo motor1, motor2, motor3, motor4;
-int pitch_input, roll_input, yaw_input, elevator_input, power_input; // Controller Inputs
-bool power_switch = false;
+int angleYInput, angleXInput, angleZInput, velZInput, powerInput; // Controller Inputs
+bool powerSwitch = false;
 
-unsigned long int remote_time_difference;
+unsigned long int remoteTimeDifference;
 int strx[15], ppm[15], ch[7], store_x;
 
 const int MPU = 0x68; // MPU6050 I2C address
+float mPI = 3.141592653;
+int sensorBiasConst = 200;
 
-float AccX_curr, AccY_curr, AccZ_curr, AccX_prev, AccY_prev, AccZ_prev, AccX_bias, AccY_bias, AccZ_bias;
-float GyroX_curr, GyroY_curr, GyroZ_curr, GyroX_prev, GyroY_prev, GyroZ_prev, GyroX_bias, GyroY_bias, GyroZ_bias;
-float acc_Angle_X, acc_Angle_Y, gyro_Angle_X, gyro_Angle_Y, gyro_Angle_Z;
+float accXCurr, accYCurr, accZCurr, accXPrev, accYPrev, accZPrev, accXBias, accYBias, accZBias;
+float gyroXCurr, gyroYCurr, gyroZCurr, gyroXPrev, gyroYPrev, gyroZPrev, gyroXBias, gyroYBias, gyroZBias;
+float accAngleX, accAngleY, gyroAngleX, gyroAngleY, gyroAngleZ;
 float roll, pitch, yaw;
-float Acc_Error_X, Acc_Error_Y, Gyro_Error_X, Gyro_Error_Y, Gyro_Error_Z;
-float elapsed_Time, current_Time, previous_Time;
-int count = 0;
+float accErrorX, accErrorY, gyroErrorX, gyroErrorY, gyroErrorZ;
+float elapsedTime, currentTime, previousTime;
+PID pidAngleX, pidAngleY, pidAngleZ, pidVelZ;
+float angleXError, angleYError, angleZError, velZError;
+float kalmanAngleX, kalmanAngleY, kalmanAngleZ, velZ;
 
+int accBiasCount = 0;
+int gyroBiasCount = 0;
+// ||||||||||| //
 // || SETUP || //
+// ||||||||||| //
 
 void setup() {
   SetupRemoteInput();
@@ -34,18 +46,30 @@ void setup() {
 
   SetupIMU();
 
-}
+  SetupPID();
 
+}
+// |||||||||| //
 // || LOOP || //
+// |||||||||| //
 
 void loop() {
+
+  CalcTime();
+  
   DefineRemoteValues();
 
-  GetSensorData();
+  GetAccData();
+
+  GetGyroData();
+
+  CalcPID();
 
 }
 
+// |||||||||||||||||||| //
 // || BASE FUNCTIONS || //
+// |||||||||||||||||||| //
 
 void SetupRemoteInput(){ //Set Remote Input
   pinMode(2, INPUT_PULLUP);
@@ -64,6 +88,8 @@ void SetupESC(){
   motor2.write(MAX_PULSE_LENGTH);
   motor3.write(MAX_PULSE_LENGTH);
   motor4.write(MAX_PULSE_LENGTH);
+
+  // NEED TO ADD PART TO WRITE MOTORS TO MIN TO CALIBRATE
 
 }
 
@@ -85,72 +111,37 @@ void SetupIMU() {
   Wire.write(0x1C);
   Wire.write(0x0); 
   Wire.endTransmission();
-}
+} 
+
+void SetupPID() {
+    pidAngleX = PID(0, 0.8, 0.1, 0.1);
+    pidAngleY = PID(0, 0.8, 0.1, 0.1);
+    pidAngleZ = PID(0, 0.8, 0.1, 0.1);
+
+    pidVelZ = PID(0, 0.8, 0.1, 0.1);
+} 
 
 void DefineRemoteValues(){ //Get remote readings and output in degrees
-
-  //Define Variables
-  int deadzone = 8;
-  float max_sensor_reading = 500;
-  float max_angle_output = 20; // degrees
-  float angle_const = max_angle_output / max_sensor_reading;
 
   //Assign 6 channel values after separation space
   AssignRemoteValues();
 
-  // Working Values
-  roll_input = ch[1];
-  elevator_input = ch[2];
-  pitch_input = ch[3];
-  yaw_input = ch[4];
-  power_input = ch[5];
+  NormalizeRemoteValues();
 
-  // Set to base Value
-  roll_input -= 500;
-  elevator_input -= 500;
-  pitch_input -= 500;
-  yaw_input -= 500;
+  InterpretRemoteValues();
 
-  // Deadzone
-  if (roll_input >= -deadzone && roll_input <= deadzone) { roll_input = 0; }
-  if (elevator_input >= -deadzone && elevator_input <= deadzone) { elevator_input = 0; }
-  if (pitch_input >= -deadzone && pitch_input <= deadzone) { pitch_input = 0; }
-  if (yaw_input >= -deadzone && yaw_input <= deadzone) { yaw_input = 0; }
+  ReadPowerSwitchRemoteInput();
 
-  // Change reciever readings to degrees
-  roll_input = float(roll_input * angle_const); // float() required for int division to work correctly
-  elevator_input = float(elevator_input * angle_const);
-  pitch_input = float(pitch_input * angle_const);
-  yaw_input = float(yaw_input * angle_const);
-
-  // Power Switch
-  if (power_input < 50 && power_input > -50) {
-    power_switch = true; // Up on the ch5 switch sends a signal around 0, which I set to be on
-  } else { power_switch = false; } // If the switch is anything but up, or not working, power is off
 }
 
-void GetSensorData() {
-
-  float AccX_raw, AccY_raw, AccZ_raw;
-  float GyroX_raw, GyroY_raw, GyroZ_raw;
-  float mPI = 3.141592653;
-  float SSF_acc_val = 16384.0; // Sensitivity Sensor Factor for the accelerometer from the datasheet
-  float SSF_gyro_val = 131; // Sensitivity Sensor Factor for the gyroscope from the datasheet
-  int bias_const = 200;
+void GetAccData() {
+  float accXRaw, accYRaw, accZRaw;
+  const float kSSF_Acc_Val = 16384.0; // Sensitivity Sensor Factor for the accelerometer from the datasheet
 
   // Set previous values | This is to keep track of the values found in both the current loop and the last loop for the IIR Filter
-  AccX_prev = AccX_curr;
-  AccY_prev = AccY_curr;
-  AccZ_prev = AccZ_curr;
-
-  GyroX_prev = GyroX_curr;
-  GyroY_prev = GyroY_curr;
-  GyroZ_prev = GyroZ_curr;
-
-  // Time Tracker | This is to keep track of time to integrate the Gyro output
-  previous_Time = current_Time;        // Previous time is stored before the actual time read
-  current_Time = millis();            // Current time actual time read
-  elapsed_Time = (current_Time - previous_Time) / 1000; // Convert to seconds
+  accXPrev = accXCurr;
+  accYPrev = accYCurr;
+  accZPrev = accZCurr;
   
   // Read accelerometer data | Accelerometer outputs in g units. So a reading of a means a*(9.8 m/s^2)
   Wire.beginTransmission(MPU);
@@ -158,79 +149,159 @@ void GetSensorData() {
   Wire.endTransmission(false);
   Wire.requestFrom(MPU, 6, true); // Read 6 registers total, each axis value is stored in 2 registers
   //For a range of +-2g, we need to divide the raw values by 16384, according to the datasheet
-  AccX_raw = (Wire.read() << 8 | Wire.read()) / SSF_acc_val; // X-axis value
-  AccY_raw = (Wire.read() << 8 | Wire.read()) / SSF_acc_val; // Y-axis value
-  AccZ_raw = (Wire.read() << 8 | Wire.read()) / SSF_acc_val; // Z-axis value
+  accXRaw = (Wire.read() << 8 | Wire.read()) / kSSF_Acc_Val; // X-axis value
+  accYRaw = (Wire.read() << 8 | Wire.read()) / kSSF_Acc_Val; // Y-axis value
+  accZRaw = (Wire.read() << 8 | Wire.read()) / kSSF_Acc_Val; // Z-axis value
   
+  // Bias removal [Must occur after RAW data retrieval and before RAW data is used]
+  // This counts the first 200 data values and uses them to set the expected initial values
+  if (accBiasCount < sensorBiasConst) {
+    // Finds Bias
+    accXBias += accXRaw;
+    accYBias += accYRaw;
+    accZBias += accZRaw;
+    accBiasCount++;
+  } else {
+    // Removes Bias
+    accXRaw -= (accXBias / sensorBiasConst);
+    accYRaw -= (accYBias / sensorBiasConst);
+    accZRaw -= (accZBias / sensorBiasConst) - 1;
+  }
+
+  // IIR Filter
+  accXCurr = IIRFilter(accXRaw, accXPrev);
+  accYCurr = IIRFilter(accYRaw, accYPrev);
+  accZCurr = IIRFilter(accZRaw, accZPrev);
+
+  // Accel Angle Calculations
+  accAngleY = atan(-accXCurr/sqrt(accYCurr*accYCurr + accZCurr*accZCurr)) * 180 / mPI;
+  accAngleX = atan(accYCurr/sqrt(accXCurr*accXCurr + accZCurr*accZCurr)) * 180 / mPI;
+
+}
+
+void GetGyroData() {
+  float gyroXRaw, gyroYRaw, gyroZRaw;
+  const float kSSF_Gyro_Val = 131; // Sensitivity Sensor Factor for the gyroscope from the datasheet
+
+  gyroXPrev = gyroXCurr;
+  gyroYPrev = gyroYCurr;
+  gyroZPrev = gyroZCurr;
+
   // Read gyro data | Gyro outputs in deg/s
   Wire.beginTransmission(MPU);
   Wire.write(0x43); // Gyro data first register address 0x43
   Wire.endTransmission(false);
   Wire.requestFrom(MPU, 6, true); // Read 4 registers total, each axis value is stored in 2 registers
-  GyroX_raw = (Wire.read() << 8 | Wire.read()) / SSF_gyro_val; // For a 250deg/s range we have to divide first the raw value by 131.0, according to the datasheet
-  GyroY_raw = (Wire.read() << 8 | Wire.read()) / SSF_gyro_val; // The higher the range, the less precise the returned degree value
-  GyroZ_raw = (Wire.read() << 8 | Wire.read()) / SSF_gyro_val;
-  
-  // Bias removal [Must occur after RAW data retrieval and before RAW data is used]
-  // This counts the first 200 data values and uses them to set the expected initial values
-  if (count < bias_const) {
+  gyroXRaw = (Wire.read() << 8 | Wire.read()) / kSSF_Gyro_Val; // For a 250deg/s range we have to divide first the raw value by 131.0, according to the datasheet
+  gyroYRaw = (Wire.read() << 8 | Wire.read()) / kSSF_Gyro_Val; // The higher the range, the less precise the returned degree value
+  gyroZRaw = (Wire.read() << 8 | Wire.read()) / kSSF_Gyro_Val;
+
+  if (gyroBiasCount < sensorBiasConst) {
     // Finds Bias
-    AccX_bias += AccX_raw;
-    AccY_bias += AccY_raw;
-    AccZ_bias += AccZ_raw;
-
-    GyroX_bias += GyroX_raw;
-    GyroY_bias += GyroY_raw;
-    GyroZ_bias += GyroZ_raw;
-
-    Serial.print("| CALIBRATING |");
-    count++;
+    gyroXBias += gyroXRaw;
+    gyroYBias += gyroYRaw;
+    gyroZBias += gyroZRaw;
+    gyroBiasCount++;
   } else {
     // Removes Bias
-    AccX_raw -= (AccX_bias / bias_const);
-    AccY_raw -= (AccY_bias / bias_const);
-    AccZ_raw -= (AccZ_bias / bias_const) - 1;
-    
-    GyroX_raw -= (GyroX_bias / bias_const);
-    GyroY_raw -= (GyroY_bias / bias_const); 
-    GyroZ_raw -= (GyroZ_bias / bias_const);
-    
+    gyroXRaw -= (gyroXBias / sensorBiasConst);
+    gyroYRaw -= (gyroYBias / sensorBiasConst); 
+    gyroZRaw -= (gyroZBias / sensorBiasConst);
   }
 
-  // IIR Filter
-  AccX_curr = IIRFilter(AccX_raw, AccX_prev);
-  AccY_curr = IIRFilter(AccY_raw, AccY_prev);
-  AccZ_curr = IIRFilter(AccZ_raw, AccZ_prev);
-  
-  GyroX_curr = IIRFilter(GyroX_raw, GyroX_prev); // This was not working for some reason so it is commented out
-  GyroY_curr = IIRFilter(GyroY_raw, GyroY_prev);
-  GyroZ_curr = IIRFilter(GyroZ_raw, GyroZ_prev);
-  
-
-  // Accel Angle Calculations
-  acc_Angle_Y = atan(-AccX_curr/sqrt(AccY_curr*AccY_curr + AccZ_curr*AccZ_curr)) * 180 / mPI;
-  acc_Angle_X = atan(AccY_curr/sqrt(AccX_curr*AccX_curr + AccZ_curr*AccZ_curr)) * 180 / mPI;
+  gyroXCurr = IIRFilter(gyroXRaw, gyroXPrev); // This was not working for some reason so it is commented out
+  gyroYCurr = IIRFilter(gyroYRaw, gyroYPrev);
+  gyroZCurr = IIRFilter(gyroZRaw, gyroZPrev);
 
   // Gyro Angle Calculations
   // Integrates the change in gyro angle over time || NOT ACCURATE
   // deg = deg + (deg/s)*s
-  gyro_Angle_X = gyro_Angle_X + GyroX_curr*elapsed_Time;  // Still drags a lot of error with it
-  gyro_Angle_Y = gyro_Angle_Y + GyroY_curr*elapsed_Time;
-
-  // COMPLIMENTARY FILTER | This is also not really working that well right now
-  roll = 0.99 * gyro_Angle_X + 0.01 * acc_Angle_X;
+  gyroAngleX = gyroAngleX + gyroXCurr*elapsedTime;  // Still drags a lot of error with it
+  gyroAngleY = gyroAngleY + gyroYCurr*elapsedTime;
+  gyroAngleZ = gyroAngleZ + gyroZCurr*elapsedTime;
 
 }
 
+void FindErrors() {
+
+  angleXError = angleXInput - kalmanAngleX;
+  angleYError = angleYInput - kalmanAngleY;
+  angleZError = angleZInput - kalmanAngleZ;
+
+  velZError = velZInput - velZ;
+
+}
+
+void CalcPID() {
+    FindErrors();
+
+    pidAngleX.addValue(angleXError, elapsedTime);
+    pidAngleY.addValue(angleYError, elapsedTime);
+    pidAngleZ.addValue(angleZError, elapsedTime);
+    pidVelZ.addValue(velZError, elapsedTime);
+
+}
+
+// ||||||||||||||||||||||||||| //
 // || BASE HELPER FUNCTIONS || //
+// ||||||||||||||||||||||||||| //
+
+// REMOTE FUNCTIONS
+void NormalizeRemoteValues() {
+
+  int deadzone = 8;
+
+    // Working Values
+  angleXInput = ch[1];
+  velZInput = ch[2];
+  angleYInput = ch[3];
+  angleZInput = ch[4];
+  powerInput = ch[5];
+
+  // Set to base Value
+  angleXInput -= 500;
+  velZInput -= 500;
+  angleYInput -= 500;
+  angleZInput -= 500;
+
+  // Deadzone
+  if (angleXInput >= -deadzone && angleXInput <= deadzone) { angleXInput = 0; }
+  if (velZInput >= -deadzone && velZInput <= deadzone) { velZInput = 0; }
+  if (angleYInput >= -deadzone && angleYInput <= deadzone) { angleYInput = 0; }
+  if (angleZInput >= -deadzone && angleZInput <= deadzone) { angleZInput = 0; }
+}
+
+void InterpretRemoteValues() {
+  float max_sensor_reading = 500;
+  float max_angle_output = 20; // degrees
+  float angle_const = max_angle_output / max_sensor_reading;
+
+  // Change reciever readings to degrees
+  angleXInput = float(angleXInput * angle_const); // float() required for int division to work correctly
+  velZInput = float(velZInput * angle_const);
+  angleYInput = float(angleYInput * angle_const);
+  angleZInput = float(angleZInput * angle_const);
+}
+
+void ReadPowerSwitchRemoteInput() {
+  if (powerInput < 50 && powerInput > -50) {
+    powerSwitch = true; // Up on the ch5 switch sends a signal around 0, which I set to be on
+  } else { powerSwitch = false; } // If the switch is anything but up, or not working, power is off
+}
+
+void CalcTime() {
+	previousTime = currentTime;        // previous time is stored before the actual time read
+	currentTime = millis();            // current time actual time read
+	elapsedTime = (currentTime - previousTime) / 1000; // convert to seconds
+}
 
 void StoreRemoteValues(){ //Store all values from temporary array
   //this code reads value from RC reciever from PPM pin (Pin 2 or  3)
   //this code gives channel values from 0-1000 values
   unsigned int a, c;
   a = micros(); //store time value a when pin value falling
-  c = a - remote_time_difference;      //calculating  time inbetween two peaks
-  remote_time_difference = a;        // 
+  c = a - remoteTimeDifference;      //calculating  time inbetween two peaks
+  remoteTimeDifference = a;        // 
   strx[store_x]=c;     //storing 15 value in  array
   store_x = store_x + 1;
   if(store_x==15){
