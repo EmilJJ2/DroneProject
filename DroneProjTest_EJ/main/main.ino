@@ -1,3 +1,12 @@
+/*
+
+1   2
+ \ /
+  ^
+ / \
+3   4
+
+*/
 // || INCLUDES || //
 #include <Servo.h>
 #include <Wire.h>
@@ -37,6 +46,7 @@ float angleXError, angleYError, angleZError, velZError;
 Kalman kalmanAngleX, kalmanAngleY, kalmanAngleZ;
 float angleX, angleY, angleZ;
 Integrator velZ;
+float motor1Speed, motor2Speed, motor3Speed, motor4Speed;
 
 int accBiasCount = 0;
 int gyroBiasCount = 0;
@@ -73,10 +83,10 @@ void loop() {
 
   // CalcPID();
 
-  Serial.print(accAngleX);
+  Serial.print(angleX);
   
   Serial.print(" | ");
-  Serial.println(angleX);
+  Serial.println(angleY);
   
 }
 
@@ -86,8 +96,7 @@ void loop() {
 
 void SetupRemoteInput(){ //Set Remote Input
   pinMode(2, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(2), StoreRemoteValues,  FALLING);
-  // enabling interrupt at pin 2
+  attachInterrupt(digitalPinToInterrupt(2), StoreRemoteValues,  FALLING); // enabling interrupt at pin 2
 }
 
 void SetupESC(){
@@ -276,6 +285,31 @@ void CalcPID() {
     pidAngleZ.addValue(angleZError, elapsedTime);
     pidVelZ.addValue(velZError, elapsedTime);
 
+}
+
+void SetMotorSpeeds() { // STILL HAS TO BE CHANGED
+  float velOutputConst = 1000;
+  float angleOutputConst = 1000;
+  motor1Speed = velz + angleX - angleY + angleZ;
+  motor2Speed = velz - angleX - angleY - angleZ;
+  motor3Speed = velz + angleX + angleY - angleZ;
+  motor4Speed = velz - angleX + angleY + angleZ;
+
+  CuttoffMotorSpeeds();
+}
+
+void CutoffMotorSpeeds() {
+  const float kMaxMotorSpeed = 1900;
+  const float kMinMotorSpeed = 1100; // CHECK!!
+  if (motor1Speed > kMaxMotorSpeed) { motor1Speed = kMaxMotorSpeed; }
+  if (motor2Speed > kMaxMotorSpeed) { motor2Speed = kMaxMotorSpeed; }
+  if (motor3Speed > kMaxMotorSpeed) { motor3Speed = kMaxMotorSpeed; }
+  if (motor4Speed > kMaxMotorSpeed) { motor4Speed = kMaxMotorSpeed; }
+
+  if (motor1Speed < kMinMotorSpeed) { motor1Speed = kMinMotorSpeed; }
+  if (motor2Speed < kMinMotorSpeed) { motor2Speed = kMinMotorSpeed; }
+  if (motor3Speed < kMinMotorSpeed) { motor3Speed = kMinMotorSpeed; }
+  if (motor4Speed < kMinMotorSpeed) { motor4Speed = kMinMotorSpeed; }
 }
 
 // ||||||||||||||||||||||||||| //
