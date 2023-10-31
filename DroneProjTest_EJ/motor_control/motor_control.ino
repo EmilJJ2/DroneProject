@@ -1,110 +1,73 @@
-/**
- * Usage, according to documentation(https://www.firediy.fr/files/drone/HW-01-V4.pdf) : 
- *     1. Plug your Arduino to your computer with USB cable, open terminal, then type 1 to send max throttle to every ESC to enter programming mode
- *     2. Power up your ESCs. You must hear "beep1 beep2 beep3" tones meaning the power supply is OK
- *     3. After 2sec, "beep beep" tone emits, meaning the throttle highest point has been correctly confirmed
- *     4. Type 0 to send min throttle
- *     5. Several "beep" tones emits, which means the quantity of the lithium battery cells (3 beeps for a 3 cells LiPo)
- *     6. A long beep tone emits meaning the throttle lowest point has been correctly confirmed
- *     7. Type 2 to launch test function. This will send min to max throttle to ESCs to test them
- *
- * @author lobodol <grobodol@gmail.com>
- */
-// ---------------------------------------------------------------------------
 #include <Servo.h>
-// ---------------------------------------------------------------------------
-// Customize here pulse lengths as needed
+
+/*
+x: left / right
+y: forward / backward
+z: up / down (altitude)
+
+
+drone motors:
+1   2
+4   3
+CW:  13
+CCW: 24
+
+
+controller:
+- (L)eft / (R)ight stick
+- (H)orizontal / (V)ertical directions
+
+controller inputs are directly proportional to velocities
+
+LH: z ang velocity -> angVel[2] -> decrease 13, increase 24
+LV: z velocity     -> vel[2]    -> increase 1234
+RH: x velocity     -> vel[0]    -> decrease 23, increase 14
+RV: y velocity     -> vel[1]    -> decrease 12, increase 34
+
+
+1 = -angVel[2] + vel[2] + vel[0] - vel[1]
+2 =  angVel[2] + vel[2] - vel[0] - vel[1]
+3 = -angVel[2] + vel[2] - vel[0] + vel[1]
+4 =  angVel[2] + vel[2] + vel[0] + vel[1]
+
+|| To-Do || 
+Velocity: X, Y, Z | Z set left stick | X,Y,Z found integrating Vel_earth from Accel_earth found from Accel_drone using rotation matrix
+Angle: pitch, roll, yaw | angles set using left and right stick | angles found are absolute
+
+Keep track of set motor speeds. Change by adding or subtracting, not setting new values. 
+
+*/
+
 #define MIN_PULSE_LENGTH 1000 // Minimum pulse length in µs
+#define MID_PULSE_LENGTH 1500 // Middle pulse length in µs
 #define MAX_PULSE_LENGTH 2000 // Maximum pulse length in µs
-// ---------------------------------------------------------------------------
-Servo motA, motB, motC, motD;
-char data;
-// ---------------------------------------------------------------------------
 
-/**
- * Initialisation routine
- */
+Servo esc1, esc2, esc3, esc4;
+
+int data = 0;
+
 void setup() {
-    Serial.begin(9600);
-    
-    motA.attach(4, MIN_PULSE_LENGTH, MAX_PULSE_LENGTH);
-    motB.attach(5, MIN_PULSE_LENGTH, MAX_PULSE_LENGTH);
-    motC.attach(6, MIN_PULSE_LENGTH, MAX_PULSE_LENGTH);
-    motD.attach(7, MIN_PULSE_LENGTH, MAX_PULSE_LENGTH);
-    
-    displayInstructions();
+  Serial.begin(9600);
+
+  esc1.attach(4, 1000, 2000);
+  esc2.attach(5, 1000, 2000);
+  esc3.attach(6, 1000, 2000);
+
+  Serial.println("Wrote Max");
+  esc1.write(MAX_PULSE_LENGTH);
+
+  delay(1000);
+
+  // esc1.write(MIN_PULSE_LENGTH);
+
 }
 
-/**
- * Main function
- */
 void loop() {
-    if (Serial.available()) {
-        data = Serial.read();
+  data = 0;
+  Serial.println(esc1.read());
 
-        switch (data) {
-            // 0
-            case 48 : Serial.println("Sending minimum throttle");
-                      motA.writeMicroseconds(MIN_PULSE_LENGTH);
-                      motB.writeMicroseconds(MIN_PULSE_LENGTH);
-                      motC.writeMicroseconds(MIN_PULSE_LENGTH);
-                      motD.writeMicroseconds(MIN_PULSE_LENGTH);
-            break;
+  if (Serial.available() > 0) { data = Serial.parseInt(); }
 
-            // 1
-            case 49 : Serial.println("Sending maximum throttle");
-                      motA.writeMicroseconds(MAX_PULSE_LENGTH);
-                      motB.writeMicroseconds(MAX_PULSE_LENGTH);
-                      motC.writeMicroseconds(MAX_PULSE_LENGTH);
-                      motD.writeMicroseconds(MAX_PULSE_LENGTH);
-            break;
+  if (data != 0) { Serial.print(data); esc1.write(data); esc2.write(data); esc3.write(data); }
 
-            // 2
-            case 50 : Serial.print("Running test in 3");
-                      delay(1000);
-                      Serial.print(" 2");
-                      delay(1000);
-                      Serial.println(" 1...");
-                      delay(1000);
-                      test();
-            break;
-        }
-    }
-    
-
-}
-
-/**
- * Test function: send min throttle to max throttle to each ESC.
- */
-void test()
-{
-    for (int i = MIN_PULSE_LENGTH; i <= MAX_PULSE_LENGTH; i += 5) {
-        Serial.print("Pulse length = ");
-        Serial.println(i);
-        
-        motA.writeMicroseconds(i);
-        motB.writeMicroseconds(i);
-        motC.writeMicroseconds(i);
-        motD.writeMicroseconds(i);
-        
-        delay(200);
-    }
-
-    Serial.println("STOP");
-    motA.writeMicroseconds(MIN_PULSE_LENGTH);
-    motB.writeMicroseconds(MIN_PULSE_LENGTH);
-    motC.writeMicroseconds(MIN_PULSE_LENGTH);
-    motD.writeMicroseconds(MIN_PULSE_LENGTH);
-}
-
-/**
- * Displays instructions to user
- */
-void displayInstructions()
-{  
-    Serial.println("READY - PLEASE SEND INSTRUCTIONS AS FOLLOWING :");
-    Serial.println("\t0 : Send min throttle");
-    Serial.println("\t1 : Send max throttle");
-    Serial.println("\t2 : Run test function\n");
 }
