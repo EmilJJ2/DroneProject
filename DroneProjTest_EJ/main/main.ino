@@ -35,6 +35,7 @@ float elapsedTime, currentTime, previousTime;
 PID pidAngleX, pidAngleY, pidAngleZ, pidVelZ;
 float angleXError, angleYError, angleZError, velZError;
 Kalman kalmanAngleX, kalmanAngleY, kalmanAngleZ;
+float angleX, angleY, angleZ;
 Integrator velZ;
 
 int accBiasCount = 0;
@@ -68,12 +69,14 @@ void loop() {
 
   GetGyroData();
 
+  GetKalmanAngles();
+
   // CalcPID();
 
   Serial.print(accAngleX);
   
   Serial.print(" | ");
-  Serial.println(gyroAngleX);
+  Serial.println(angleX);
   
 }
 
@@ -235,6 +238,7 @@ void GetGyroData() {
   gyroYCurr = IIRFilter(gyroYRaw, gyroYPrev);
   gyroZCurr = IIRFilter(gyroZRaw, gyroZPrev);
 
+  /* DELETE ALL THIS!!
   // Gyro Angle Calculations
   // Integrates the change in gyro angle over time || NOT ACCURATE
   // deg = deg + (deg/s)*s
@@ -243,27 +247,26 @@ void GetGyroData() {
     gyroAngleY = gyroAngleY + gyroYCurr*elapsedTime;
     gyroAngleZ = gyroAngleZ + gyroZCurr*elapsedTime;
   }
+  */ 
 
 }
 
-/* ALL THIS NEEDS TO BE UNCOMMENTED WHEN KALMAN CLASS IS FINISHED
 void GetKalmanAngles(){
-  kalmanAngleX.getAngle(accAngleX, gyroXCurr);
-  kalmanAngleY.getAngle(accAngleY, gyroYCurr);
-  kalmanAngleZ.getAngle(accAngleZ, gyroZCurr);
+  angleX = kalmanAngleX.getAngle(accAngleX, gyroXCurr, elapsedTime);
+  angleY = kalmanAngleY.getAngle(accAngleY, gyroYCurr, elapsedTime);
 }
 
 
 void FindErrors() {
 
-  angleXError = angleXInput - kalmanAngleX.getAngle();
-  angleYError = angleYInput - kalmanAngleY.getAngle();
-  angleZError = angleZInput - kalmanAngleZ.getAngle();
+  angleXError = angleXInput - angleX;
+  angleYError = angleYInput - angleY;
+  angleZError = angleZInput - angleZ;
 
   velZError = velZInput - velZ.getIntegral();
 
 }
-*/
+
 
 void CalcPID() {
     //FindErrors();
