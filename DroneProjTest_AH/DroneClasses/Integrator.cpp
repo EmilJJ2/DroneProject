@@ -3,7 +3,6 @@
 Integrator::Integrator() {
     lastVal = 0;
     integral = 0;
-
 }
 
 Integrator::Integrator(float startingVal) {
