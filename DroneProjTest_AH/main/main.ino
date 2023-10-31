@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <Integrator.h>
 #include <PID.h>
+#include <Kalman.h>
 
 // ||||||||||||||||||||||| //
 // || SET GLOBAL VALUES || //
@@ -22,16 +23,19 @@ int strx[15], ppm[15], ch[7], store_x;
 const int MPU = 0x68; // MPU6050 I2C address
 float mPI = 3.141592653;
 int sensorBiasConst = 200;
+bool gyroBiasCalibrating = true;
+bool accBiasCalibrating = true;
 
 float accXCurr, accYCurr, accZCurr, accXPrev, accYPrev, accZPrev, accXBias, accYBias, accZBias;
 float gyroXCurr, gyroYCurr, gyroZCurr, gyroXPrev, gyroYPrev, gyroZPrev, gyroXBias, gyroYBias, gyroZBias;
-float accAngleX, accAngleY, gyroAngleX, gyroAngleY, gyroAngleZ;
+float accAngleX, accAngleY, accAngleZ, gyroAngleX, gyroAngleY, gyroAngleZ;
 float roll, pitch, yaw;
 float accErrorX, accErrorY, gyroErrorX, gyroErrorY, gyroErrorZ;
 float elapsedTime, currentTime, previousTime;
 PID pidAngleX, pidAngleY, pidAngleZ, pidVelZ;
 float angleXError, angleYError, angleZError, velZError;
-float kalmanAngleX, kalmanAngleY, kalmanAngleZ, velZ;
+Kalman kalmanAngleX, kalmanAngleY, kalmanAngleZ;
+Integrator velZ;
 
 int accBiasCount = 0;
 int gyroBiasCount = 0;
@@ -40,13 +44,14 @@ int gyroBiasCount = 0;
 // ||||||||||| //
 
 void setup() {
-  SetupRemoteInput();
+  Serial.begin(19200);
+  // SetupRemoteInput();
 
-  SetupESC();
+  // SetupESC();
 
   SetupIMU();
 
-  SetupPID();
+  // SetupPID();
 
 }
 // |||||||||| //
@@ -57,14 +62,19 @@ void loop() {
 
   CalcTime();
   
-  DefineRemoteValues();
+  // DefineRemoteValues();
 
   GetAccData();
 
   GetGyroData();
 
-  CalcPID();
+  // CalcPID();
 
+  Serial.print(accAngleX);
+  
+  Serial.print(" | ");
+  Serial.println(gyroAngleX);
+  
 }
 
 // |||||||||||||||||||| //
@@ -89,7 +99,12 @@ void SetupESC(){
   motor3.write(MAX_PULSE_LENGTH);
   motor4.write(MAX_PULSE_LENGTH);
 
-  // NEED TO ADD PART TO WRITE MOTORS TO MIN TO CALIBRATE
+  delay(8000);
+
+  motor1.write(MIN_PULSE_LENGTH);
+  motor2.write(MIN_PULSE_LENGTH);
+  motor3.write(MIN_PULSE_LENGTH);
+  motor4.write(MIN_PULSE_LENGTH);
 
 }
 
@@ -162,6 +177,7 @@ void GetAccData() {
     accZBias += accZRaw;
     accBiasCount++;
   } else {
+    accBiasCalibrating = false;
     // Removes Bias
     accXRaw -= (accXBias / sensorBiasConst);
     accYRaw -= (accYBias / sensorBiasConst);
@@ -176,6 +192,10 @@ void GetAccData() {
   // Accel Angle Calculations
   accAngleY = atan(-accXCurr/sqrt(accYCurr*accYCurr + accZCurr*accZCurr)) * 180 / mPI;
   accAngleX = atan(accYCurr/sqrt(accXCurr*accXCurr + accZCurr*accZCurr)) * 180 / mPI;
+
+  // Calculate Vel Z
+  velZ.addValue(accZCurr, elapsedTime);
+  
 
 }
 
@@ -202,7 +222,9 @@ void GetGyroData() {
     gyroYBias += gyroYRaw;
     gyroZBias += gyroZRaw;
     gyroBiasCount++;
+
   } else {
+    gyroBiasCalibrating = false;
     // Removes Bias
     gyroXRaw -= (gyroXBias / sensorBiasConst);
     gyroYRaw -= (gyroYBias / sensorBiasConst); 
@@ -216,24 +238,35 @@ void GetGyroData() {
   // Gyro Angle Calculations
   // Integrates the change in gyro angle over time || NOT ACCURATE
   // deg = deg + (deg/s)*s
-  gyroAngleX = gyroAngleX + gyroXCurr*elapsedTime;  // Still drags a lot of error with it
-  gyroAngleY = gyroAngleY + gyroYCurr*elapsedTime;
-  gyroAngleZ = gyroAngleZ + gyroZCurr*elapsedTime;
+  if (!gyroBiasCalibrating) {
+    gyroAngleX = gyroAngleX + gyroXCurr*elapsedTime;  // Still drags a lot of error with it
+    gyroAngleY = gyroAngleY + gyroYCurr*elapsedTime;
+    gyroAngleZ = gyroAngleZ + gyroZCurr*elapsedTime;
+  }
 
 }
+
+/* ALL THIS NEEDS TO BE UNCOMMENTED WHEN KALMAN CLASS IS FINISHED
+void GetKalmanAngles(){
+  kalmanAngleX.getAngle(accAngleX, gyroXCurr);
+  kalmanAngleY.getAngle(accAngleY, gyroYCurr);
+  kalmanAngleZ.getAngle(accAngleZ, gyroZCurr);
+}
+
 
 void FindErrors() {
 
-  angleXError = angleXInput - kalmanAngleX;
-  angleYError = angleYInput - kalmanAngleY;
-  angleZError = angleZInput - kalmanAngleZ;
+  angleXError = angleXInput - kalmanAngleX.getAngle();
+  angleYError = angleYInput - kalmanAngleY.getAngle();
+  angleZError = angleZInput - kalmanAngleZ.getAngle();
 
-  velZError = velZInput - velZ;
+  velZError = velZInput - velZ.getIntegral();
 
 }
+*/
 
 void CalcPID() {
-    FindErrors();
+    //FindErrors();
 
     pidAngleX.addValue(angleXError, elapsedTime);
     pidAngleY.addValue(angleYError, elapsedTime);
