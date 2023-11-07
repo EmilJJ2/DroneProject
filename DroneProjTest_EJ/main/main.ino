@@ -47,6 +47,7 @@ Kalman kalmanAngleX, kalmanAngleY, kalmanAngleZ;
 float angleX, angleY, angleZ;
 Integrator velZ;
 float motor1Speed, motor2Speed, motor3Speed, motor4Speed;
+float input = 0;
 
 int accBiasCount = 0;
 int gyroBiasCount = 0;
@@ -56,6 +57,7 @@ int gyroBiasCount = 0;
 
 void setup() {
   Serial.begin(19200);
+
   // SetupRemoteInput();
 
   // SetupESC();
@@ -83,16 +85,27 @@ void loop() {
 
   // CalcPID();
 
-  Serial.print(angleX);
-  
-  Serial.print(" | ");
-  Serial.println(angleY);
-  
+  // SwitchOff(); // Must be last!!
+
 }
 
 // |||||||||||||||||||| //
 // || BASE FUNCTIONS || //
 // |||||||||||||||||||| //
+
+void TestMotors() {
+  // Takes input from Serial and sends it to the motors with a delay in between 
+  input = Serial.parseFloat();
+  if (input != 0) {
+    motor1.write(input);
+    delay(1000);
+    motor2.write(input);
+    delay(1000);
+    motor3.write(input);
+    delay(1000);
+    motor4.write(input);
+  }
+}
 
 void SetupRemoteInput(){ //Set Remote Input
   pinMode(2, INPUT_PULLUP);
@@ -110,6 +123,7 @@ void SetupESC(){
   motor2.write(MAX_PULSE_LENGTH);
   motor3.write(MAX_PULSE_LENGTH);
   motor4.write(MAX_PULSE_LENGTH);
+  Serial.println("MAX");
 
   delay(8000);
 
@@ -117,6 +131,7 @@ void SetupESC(){
   motor2.write(MIN_PULSE_LENGTH);
   motor3.write(MIN_PULSE_LENGTH);
   motor4.write(MIN_PULSE_LENGTH);
+  Serial.println("MIN");
 
 }
 
@@ -247,17 +262,6 @@ void GetGyroData() {
   gyroYCurr = IIRFilter(gyroYRaw, gyroYPrev);
   gyroZCurr = IIRFilter(gyroZRaw, gyroZPrev);
 
-  /* DELETE ALL THIS!!
-  // Gyro Angle Calculations
-  // Integrates the change in gyro angle over time || NOT ACCURATE
-  // deg = deg + (deg/s)*s
-  if (!gyroBiasCalibrating) {
-    gyroAngleX = gyroAngleX + gyroXCurr*elapsedTime;  // Still drags a lot of error with it
-    gyroAngleY = gyroAngleY + gyroYCurr*elapsedTime;
-    gyroAngleZ = gyroAngleZ + gyroZCurr*elapsedTime;
-  }
-  */ 
-
 }
 
 void GetKalmanAngles(){
@@ -290,12 +294,12 @@ void CalcPID() {
 void SetMotorSpeeds() { // STILL HAS TO BE CHANGED
   float velOutputConst = 1000;
   float angleOutputConst = 1000;
-  motor1Speed = velz + angleX - angleY + angleZ;
-  motor2Speed = velz - angleX - angleY - angleZ;
-  motor3Speed = velz + angleX + angleY - angleZ;
-  motor4Speed = velz - angleX + angleY + angleZ;
+  motor1Speed = velZ.getIntegral() + angleX - angleY + angleZ;
+  motor2Speed = velZ.getIntegral() - angleX - angleY - angleZ;
+  motor3Speed = velZ.getIntegral() + angleX + angleY - angleZ;
+  motor4Speed = velZ.getIntegral() - angleX + angleY + angleZ;
 
-  CuttoffMotorSpeeds();
+  CutoffMotorSpeeds();
 }
 
 void CutoffMotorSpeeds() {
@@ -310,6 +314,15 @@ void CutoffMotorSpeeds() {
   if (motor2Speed < kMinMotorSpeed) { motor2Speed = kMinMotorSpeed; }
   if (motor3Speed < kMinMotorSpeed) { motor3Speed = kMinMotorSpeed; }
   if (motor4Speed < kMinMotorSpeed) { motor4Speed = kMinMotorSpeed; }
+}
+
+void SwitchOff() {
+  if (!powerSwitch) {
+    motor1.write(1000);
+    motor2.write(1000);
+    motor3.write(1000);
+    motor4.write(1000);
+  }
 }
 
 // ||||||||||||||||||||||||||| //
