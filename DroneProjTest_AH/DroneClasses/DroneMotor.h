@@ -5,10 +5,8 @@
 class DroneMotor {
     public:
         DroneMotor();
+        DroneMotor(Servo e, int p);
 
-        DroneMotor(Servo e);
-
-        void calibrate(int p);
         void setSpeed(float s);
 		float getSpeed();
 	private:
