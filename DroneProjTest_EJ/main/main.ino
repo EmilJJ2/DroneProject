@@ -45,6 +45,7 @@ PID pidAngleX, pidAngleY, pidAngleZ, pidVelZ;
 float angleXError, angleYError, angleZError, velZError;
 Kalman kalmanAngleX, kalmanAngleY, kalmanAngleZ;
 float angleX, angleY, angleZ;
+float outputAngleX, outputAngleY, outputAngleZ, outputVelZ;
 Integrator velZ;
 float motor1Speed, motor2Speed, motor3Speed, motor4Speed;
 float input = 0;
@@ -319,13 +320,23 @@ void CalcPID() {
 
 }
 
+void ScaleMotorSpeeds() {
+  const float kMaxDegree = 20;
+  const float kMaxZVelocity = 0.2;
+  outputAngleX = pidAngleX.GetValue() * 500 / kMaxDegree;
+  outputAngleY = pidAngleY.GetValue() * 500 / kMaxDegree;
+  outputAngleZ = pidAngleZ.GetValue() * 500 / kMaxDegree;
+  outputVelZ = velZ.getIntegral() * 500 / kMaxZVelocity;
+}
+
 void SetMotorSpeeds() { // STILL HAS TO BE CHANGED
-  float velOutputConst = 1000;
-  float angleOutputConst = 1000;
-  motor1Speed = velZ.getIntegral() + angleX - angleY + angleZ;
-  motor2Speed = velZ.getIntegral() - angleX - angleY - angleZ;
-  motor3Speed = velZ.getIntegral() + angleX + angleY - angleZ;
-  motor4Speed = velZ.getIntegral() - angleX + angleY + angleZ;
+  float velOutputConst = 2/5;
+  float angleOutputConst = 1/5;
+
+  motor1Speed += velOutputConst * outputVelZ + angleOutputConst*(outputAngleX - outputAngleY + outputAngleZ);
+  motor2Speed += velOutputConst * outputVelZ - angleOutputConst*(outputAngleX - outputAngleY - outputAngleZ);
+  motor3Speed += velOutputConst * outputVelZ + angleOutputConst*(outputAngleX + outputAngleY - outputAngleZ);
+  motor4Speed += velOutputConst * outputVelZ - angleOutputConst*(outputAngleX + outputAngleY + outputAngleZ);
 
   CutoffMotorSpeeds(); // Make sure motor speeds are within cuttoff points
 }
@@ -334,6 +345,7 @@ void SetMotorSpeeds() { // STILL HAS TO BE CHANGED
 void PowerSwitch() {
   if (!powerSwitch) { SwitchOff(); }
 }
+
 
 void SendMotorSpeeds() {
   // Two negative, two positive
