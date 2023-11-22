@@ -13,6 +13,6 @@ Integrator::Integrator(float startingVal) {
 // add value to integral and update lastVal
 // timeStep is time since last call to addValue
 void Integrator::addValue(float newVal, float timeStep) {
-    integral += timeStep * (lastVal + newVal)/2; // Mid Point Reimann Sum??
+    integral += timeStep * (lastVal + newVal)/2; // trapezoidal integral (riemann sum)
     lastVal = newVal;
 }

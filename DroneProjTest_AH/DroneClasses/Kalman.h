@@ -5,7 +5,6 @@ public:
     Kalman();
     // The angle should be in degrees and the rate should be in degrees per second and the delta time in seconds
     float getAngle(float newAngle, float newRate, float dt);
-
     void setAngle(float newAngle) { angle = newAngle; }; // Used to set angle, this should be set as the starting angle
     float getRate() { return rate; }; // Return the unbiased rate
 
@@ -18,7 +17,6 @@ public:
     float getQbias() { return Q_bias; };
     float getRmeasure() { return R_measure; };
     float getAngle() { return angle; };
-
 private:
     /* Kalman filter variables */
     float Q_angle; // Process noise variance for the accelerometer
@@ -34,6 +32,5 @@ private:
     float y; // Angle difference
     float S; // Estimate error
 };
-
 
 #endif

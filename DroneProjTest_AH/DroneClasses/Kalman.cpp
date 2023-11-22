@@ -1,19 +1,19 @@
 #include "Kalman.h"
 
 Kalman::Kalman() {
-        /* We will set the variables like so, these can also be tuned by the user */
-        Q_angle = 0.001;
-        Q_bias = 0.003;
-        R_measure = 0.03;
+    /* we will set the variables like so, these can also be tuned by the user */
+    Q_angle = 0.001;
+    Q_bias = 0.003;
+    R_measure = 0.03;
 
-        angle = 0; // Reset the angle
-        bias = 0; // Reset bias
+    angle = 0; // reset the angle
+    bias = 0;  // reset bias
 
-        P[0][0] = 0; // Since we assume that the bias is 0 and we know the starting angle (use setAngle), the error covariance matrix is set like so - see: http://en.wikipedia.org/wiki/Kalman_filter#Example_application.2C_technical
-        P[0][1] = 0;
-        P[1][0] = 0;
-        P[1][1] = 0;
-    };
+    P[0][0] = 0; // since we assume that the bias is 0 and we know the starting angle (use setAngle), the error covariance matrix is set like so - see: http://en.wikipedia.org/wiki/Kalman_filter#Example_application.2C_technical
+    P[0][1] = 0;
+    P[1][0] = 0;
+    P[1][1] = 0;
+};
 
 float Kalman::getAngle(float newAngle, float newRate, float dt) {
         // KasBot V2  -  Kalman filter module - http://www.x-firm.com/?page_id=145

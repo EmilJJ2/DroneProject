@@ -8,7 +8,7 @@ Servo motor1, motor2, motor3, motor4;
 
 void setup() {
   Serial.begin(19200);
-  SetupESC();
+  setupESC();
 }
 
 void loop() {
@@ -19,10 +19,9 @@ void loop() {
   motor1.write(1300);
   delay(4000);
   motor1.write(1400);
-
 }
 
-void SetupESC(){
+void setupESC(){
   // connect motors to digital 4,5,6,7 pins
   motor1.attach(4, 1000, 2000);
   motor2.attach(5, 1000, 2000);
@@ -42,7 +41,5 @@ void SetupESC(){
   motor3.write(MIN_PULSE_LENGTH);
   motor4.write(MIN_PULSE_LENGTH);
   Serial.println("MIN");
-
-
 }
 

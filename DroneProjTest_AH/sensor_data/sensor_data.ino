@@ -1,6 +1,6 @@
 #include <Wire.h>
 
-int angleYInput, angleXInput, angleZInput, velZInput, powerInput; // Controller Inputs
+int angleYInput, angleXInput, angleZInput, velZInput, powerInput; // controller inputs
 bool powerSwitch = false;
 
 unsigned long int remoteTimeDifference;
@@ -22,7 +22,6 @@ int accBiasCount = 0;
 int gyroBiasCount = 0;
 Integrator velZ;
 
-
 float IIRFilter(float previous_value, float current_value) {
   float alpha = 0.2;
   float output = alpha*previous_value + (1-alpha)*current_value;
@@ -32,25 +31,24 @@ float IIRFilter(float previous_value, float current_value) {
 // Everything in here just initiates information flow from the IMU to the Arduino
 void setup() {
   Serial.begin(19200);
-  SetupIMU();
-
+  setupIMU();
 }
 
 void loop() {
-  CalcTime();
-  GetAccData();
-  GetGyroData();
+  calcTime();
+  getAccData();
+  getGyroData();
 
   Serial.print(accAngleX);
 }
 
-void CalcTime() {
+void calcTime() {
 	previousTime = currentTime;        // previous time is stored before the actual time read
 	currentTime = millis();            // current time actual time read
 	elapsedTime = (currentTime - previousTime) / 1000; // convert to seconds
 }
 
-void SetupIMU() {
+void setupIMU() {
   Wire.begin();                      // Initialize comunication
   Wire.beginTransmission(MPU);       // Start communication with MPU6050 // MPU=0x68
   Wire.write(0x6B);                  // Talk to the register 6B
@@ -71,7 +69,7 @@ void SetupIMU() {
 } 
 
 
-void GetAccData() {
+void getAccData() {
   float accXRaw, accYRaw, accZRaw;
   const float kSSF_Acc_Val = 16384.0; // Sensitivity Sensor Factor for the accelerometer from the datasheet
 
@@ -121,7 +119,7 @@ void GetAccData() {
 
 }
 
-void GetGyroData() {
+void getGyroData() {
   float gyroXRaw, gyroYRaw, gyroZRaw;
   const float kSSF_Gyro_Val = 131; // Sensitivity Sensor Factor for the gyroscope from the datasheet
 
@@ -165,5 +163,4 @@ void GetGyroData() {
     gyroAngleY = gyroAngleY + gyroYCurr*elapsedTime;
     gyroAngleZ = gyroAngleZ + gyroZCurr*elapsedTime;
   }
-
 }
