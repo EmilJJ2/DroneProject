@@ -56,6 +56,7 @@ int gyroBiasCount = 0;
 // ||||||||||| //
 // || SETUP || //
 // ||||||||||| //
+
 void setup() {
 	Serial.begin(19200);
 
@@ -83,7 +84,7 @@ void loop() {
 		calcPID();
 	}
 
-	// PowerSwitch(); // must be last!!
+	// togglePowerSwitch(); // must be last!!
 	scaleMotorSpeeds();
 	setMotorSpeeds();
 	sendMotorSpeeds();
@@ -207,7 +208,7 @@ void sendMotorSpeeds() {
 	motor4.write(motor4Speed);
 }
 
-void powerSwitch() {
+void togglePowerSwitch() {
 	if (!powerSwitch) { switchOff(); }
 }
 
@@ -266,9 +267,9 @@ void getAccData() {
 		accZRaw -= (accZBias / sensorBiasConst) - 1;
 
 		// IIR filter
-		accXCurr = IIRFilter(accXRaw, accXPrev);
-		accYCurr = IIRFilter(accYRaw, accYPrev);
-		accZCurr = IIRFilter(accZRaw, accZPrev);
+		accXCurr = IIRFilter(accXPrev, accXRaw);
+		accYCurr = IIRFilter(accYPrev, accYRaw);
+		accZCurr = IIRFilter(accZPrev, accZRaw);
 
 		// accel angle calculations
 		accAngleY = atan(-accXCurr/sqrt(accYCurr*accYCurr + accZCurr*accZCurr)) * 180 / mPI;
@@ -312,9 +313,9 @@ void getGyroData() {
 		gyroZRaw -= (gyroZBias / sensorBiasConst);
 	}
 
-	gyroXCurr = IIRFilter(gyroXRaw, gyroXPrev); // this was not working for some reason so it is commented out
-	gyroYCurr = IIRFilter(gyroYRaw, gyroYPrev);
-	gyroZCurr = IIRFilter(gyroZRaw, gyroZPrev);
+	gyroXCurr = IIRFilter(gyroXPrev, gyroXRaw); // this was not working for some reason so it is commented out
+	gyroYCurr = IIRFilter(gyroYPrev, gyroYRaw);
+	gyroZCurr = IIRFilter(gyroZPrev, gyroZRaw);
 }
 
 // sets motor speeds to 0
