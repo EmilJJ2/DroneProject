@@ -7,6 +7,7 @@
 */
 
 // || INCLUDES || //
+#include <Arduino.h>
 #include <Servo.h>
 #include <Wire.h>
 #include <Integrator.h>
