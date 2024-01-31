@@ -14,11 +14,13 @@ void setup() {
   esc1.attach(4, 1000, 2000);
   esc2.attach(5, 1000, 2000);
   esc3.attach(6, 1000, 2000);
+  esc4.attach(7, 1000, 2000);
 
   Serial.println("Wrote Max");
   esc1.write(MAX_PULSE_LENGTH);
   esc2.write(MAX_PULSE_LENGTH);
   esc3.write(MAX_PULSE_LENGTH);
+  esc4.write(MAX_PULSE_LENGTH);
 
   delay(1000);
 
@@ -31,6 +33,6 @@ void loop() {
 
   if (Serial.available() > 0) { data = Serial.parseInt(); }
 
-  if (data != 0) { Serial.print(data); esc1.write(data); esc2.write(data); esc3.write(data); }
+  if (data != 0) { Serial.print(data); esc1.write(data); esc2.write(data); esc3.write(data); esc4.write(data); }
 
 }

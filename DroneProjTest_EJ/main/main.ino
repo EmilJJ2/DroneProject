@@ -23,7 +23,7 @@
 #define MAX_PULSE_LENGTH 2000 // Maximum motor pulse length in µs
 
 Servo motor1, motor2, motor3, motor4;
-int angleYInput, angleXInput, angleZInput, velZInput, powerInput; // Controller Inputs
+float angleYInput, angleXInput, angleZInput, velZInput, powerInput; // Controller Inputs | TODO: CHECK IF THIS SHOULD BE FLOAT OR INT
 bool powerSwitch = false;
 
 unsigned long int remoteTimeDifference;
@@ -35,7 +35,7 @@ int sensorBiasConst = 200;
 bool gyroBiasCalibrating = true;
 bool accBiasCalibrating = true;
 
-float accXCurr, accYCurr, accZCurr, accXPrev, accYPrev, accZPrev, accXBias, accYBias, accZBias;
+float accXCurr, accYCurr, accZCurr, accXPrev, accYPrev, accZPrev=1, accXBias, accYBias, accZBias;
 float gyroXCurr, gyroYCurr, gyroZCurr, gyroXPrev, gyroYPrev, gyroZPrev, gyroXBias, gyroYBias, gyroZBias;
 float accAngleX, accAngleY, accAngleZ, gyroAngleX, gyroAngleY, gyroAngleZ;
 float roll, pitch, yaw;
@@ -53,12 +53,19 @@ bool startup = true;
 
 int accBiasCount = 0;
 int gyroBiasCount = 0;
+
+int testVal = 0;
+
+// SETPOINTS
+float setRoll, setPitch, setYaw, setVelZ;
+
+
 // ||||||||||| //
 // || SETUP || //
 // ||||||||||| //
 
 void setup() {
-  Serial.begin(19200);
+  Serial.begin(9600);
 
   SetupRemoteInput();
 
@@ -67,6 +74,8 @@ void setup() {
   SetupIMU();
 
   SetupPID();
+
+  IntializeSetpoint();
 
 }
 // |||||||||| //
@@ -89,40 +98,46 @@ void loop() {
 
     CalcPID();
   }
-
-  // PowerSwitch(); // Must be last!!
+  // TODO: Use powerswitch for controlled startup and setdown. Add button for full stop
+  PowerSwitch(); // Must be last!!
 
   SendMotorSpeeds();
+  
+  
 
-  Serial.println(angleXInput);
 
 }
 
-// |||||||||||||||||||| //
-// || BASE FUNCTIONS || //
-// |||||||||||||||||||| //
-
-void TestMotors() {
-  // Takes input from Serial and sends it to the motors with a delay in between 
-  input = Serial.parseFloat();
-  if (input != 0) {
-    motor1.write(input);
-    delay(1000);
-    motor2.write(input);
-    delay(1000);
-    motor3.write(input);
-    delay(1000);
-    motor4.write(input);
-  }
-}
+// ||||||||||||||||||||| //
+// || SETUP FUNCTIONS || //
+// ||||||||||||||||||||| //
 
 void SetupRemoteInput(){ //Set Remote Input
+  Serial.println("|| Remote Setup ||");
   pinMode(2, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(2), StoreRemoteValues,  FALLING); // enabling interrupt at pin 2
 }
 
+void StoreRemoteValues(){ //Store all values from temporary array
+  //this code reads value from RC reciever from PPM pin (Pin 2 or  3)
+  //this code gives channel values from 0-1000 values
+  unsigned int a, c;
+  a = micros(); //store time value a when pin value falling
+  c = a - remoteTimeDifference;      //calculating  time inbetween two peaks
+  remoteTimeDifference = a;        // 
+  strx[store_x]=c;     //storing 15 value in  array
+  store_x = store_x + 1;
+  if(store_x==15){
+    for(int j=0;j<15;j++){
+      ppm[j]=strx[j];
+    }
+    store_x = 0;
+  }
+}
+
 void SetupESC(){
   // connect motors to digital 4,5,6,7 pins
+  Serial.println("|| ESC Calibration ||");
   motor1.attach(4, 1000, 2000);
   motor2.attach(5, 1000, 2000);
   motor3.attach(6, 1000, 2000);
@@ -132,7 +147,7 @@ void SetupESC(){
   motor2.write(MAX_PULSE_LENGTH);
   motor3.write(MAX_PULSE_LENGTH);
   motor4.write(MAX_PULSE_LENGTH);
-  Serial.println("MAX");
+  Serial.println("MAX MOTOR SPEED");
 
   delay(4000);
 
@@ -140,13 +155,14 @@ void SetupESC(){
   motor2.write(MIN_PULSE_LENGTH);
   motor3.write(MIN_PULSE_LENGTH);
   motor4.write(MIN_PULSE_LENGTH);
-  Serial.println("MIN");
+  Serial.println("MIN MOTOR SPEED");
   delay(4000);
 
 
 }
 
 void SetupIMU() {
+  Serial.println("|| IMU Setup ||");
   Wire.begin();                      // Initialize comunication
   Wire.beginTransmission(MPU);       // Start communication with MPU6050 // MPU=0x68
   Wire.write(0x6B);                  // Talk to the register 6B
@@ -167,6 +183,7 @@ void SetupIMU() {
 } 
 
 void SetupPID() {
+    Serial.println("|| PID Setup ||");
     pidAngleX = PID(0, 0.8, 0.1, 0.1);
     pidAngleY = PID(0, 0.8, 0.1, 0.1);
     pidAngleZ = PID(0, 0.8, 0.1, 0.1);
@@ -174,34 +191,107 @@ void SetupPID() {
     pidVelZ = PID(0, 0.8, 0.1, 0.1);
 } 
 
-void SetupMotorVals() {
-  const float kStartSpeed = 1150; // Test to find right value
-  motor1Speed = kStartSpeed;
-  motor2Speed = kStartSpeed;
-  motor3Speed = kStartSpeed;
-  motor4Speed = kStartSpeed;
+void InitializeSetpoint() {
+  setRoll = 0; // degrees
+  setYaw = 0; // degrees
+  setPitch = 0; // degrees
+  setVelZ = 0.5; // m/s
 }
+
+// |||||||||||||||||||| //
+// || LOOP FUNCTIONS || //
+// |||||||||||||||||||| //
+
+void CalcTime() {
+	previousTime = currentTime;        // previous time is stored before the actual time read
+	currentTime = millis();            // current time actual time read
+	elapsedTime = (currentTime - previousTime) / 1000; // convert to seconds
+}
+
 
 void DefineRemoteValues(){ //Get remote readings and output in degrees
 
-  //Assign 6 channel values after separation space
   AssignRemoteValues();
 
   NormalizeRemoteValues();
 
-  InterpretRemoteValues();
+  //InterpretRemoteValues();
+
+  SetCurrentInputs();
 
   ReadPowerSwitchRemoteInput();
 
 }
 
+void AssignRemoteValues(){ //Take stored remote values and output to loop
+  int  i,j,k=0;
+  for(k=14;k>-1;k--){
+    if(ppm[k]>5000) {
+      j=k;
+    }
+  }  //detecting separation  space 10000us in that another array  | CHANGING IT TO 5000us FIXED IT FOR EMIL                   
+  for(i=1;i<=6;i++){
+    ch[i]=(ppm[i+j]-1000);
+  }
+}   
+
+void NormalizeRemoteValues() {
+
+  int deadzone = 8;
+
+    // Working Values
+  angleXInput = ch[1];
+  velZInput = ch[2];
+  angleYInput = ch[3];
+  angleZInput = ch[4];
+  powerInput = ch[5];
+
+  // Set to base Value
+  angleXInput -= 500;
+  velZInput -= 500;
+  angleYInput -= 500;
+  angleZInput -= 500;
+
+  // Deadzone
+  if (angleXInput >= -deadzone && angleXInput <= deadzone) { angleXInput = 0; }
+  if (velZInput >= -deadzone && velZInput <= deadzone) { velZInput = 0; }
+  if (angleYInput >= -deadzone && angleYInput <= deadzone) { angleYInput = 0; }
+  if (angleZInput >= -deadzone && angleZInput <= deadzone) { angleZInput = 0; }
+}
+
+void InterpretRemoteValues() {
+  float max_sensor_reading = 500;
+  float max_angle_output = 20; // degrees
+  float angle_const = max_angle_output / max_sensor_reading;
+
+  // Change reciever readings to degrees
+  // TODO: Make sure its a float
+  angleXInput = float(angleXInput * angle_const); // float() required for int division to work correctly
+  velZInput = float(velZInput * angle_const);
+  angleYInput = float(angleYInput * angle_const);
+  angleZInput = float(angleZInput * angle_const);
+}
+
+// For Hover Startup
+void SetCurrentInputs() {
+  angleXInput = 0;
+  angleYInput = 0;
+  angleZInput = 0;
+
+  // velZ has 4 seconds to lift off and then stops. Allows to give time for liftoff without tracking distance
+  float secondsToElevate = 4;
+  velZInput = (setVelZ - (elapsedTime/secondsToElevate) * setVelZ) >= 0 ? 0 : (setVelZ - (elapsedTime/secondsToElevate) * setVelZ) ;
+}
+
+void ReadPowerSwitchRemoteInput() {
+  if (powerInput < 50 && powerInput > -50) {
+    powerSwitch = true; // Up on the ch5 switch sends a signal around 0, which I set to be on
+  } else { powerSwitch = false; } // If the switch is anything but up, or not working, power is off
+}
+
 void GetSensorData() {
   GetAccData();
   GetGyroData();
-}
-
-bool DoneCalibrating() {
-  return !accBiasCalibrating && !gyroBiasCalibrating;
 }
 
 void GetAccData() {
@@ -236,23 +326,26 @@ void GetAccData() {
     // Removes Bias
     accXRaw -= (accXBias / sensorBiasConst);
     accYRaw -= (accYBias / sensorBiasConst);
-    accZRaw -= (accZBias / sensorBiasConst) - 1;
+    accZRaw -= (accZBias / sensorBiasConst) - 1; // TODO: Check if -1 is necessary
 
     // IIR Filter
     accXCurr = IIRFilter(accXRaw, accXPrev);
     accYCurr = IIRFilter(accYRaw, accYPrev);
     accZCurr = IIRFilter(accZRaw, accZPrev);
 
+
     // Accel Angle Calculations
     accAngleY = atan(-accXCurr/sqrt(accYCurr*accYCurr + accZCurr*accZCurr)) * 180 / mPI;
     accAngleX = atan(accYCurr/sqrt(accXCurr*accXCurr + accZCurr*accZCurr)) * 180 / mPI;
 
     // Calculate Vel Z
-    velZ.addValue(accZCurr * 9.8 - 9.8, elapsedTime);
+    if (abs(accZCurr - 1) < 0.01) { accZCurr = 1; }
+    velZ.addValue(accZCurr - 1, elapsedTime);
+
+    Serial.print(accZCurr, 6);
+    Serial.print(" | ");
+    Serial.println(velZ.getIntegral(), 6);
   }
-
-  
-
 }
 
 void GetGyroData() {
@@ -293,22 +386,22 @@ void GetGyroData() {
 
 }
 
+bool DoneCalibrating() {
+  return !accBiasCalibrating && !gyroBiasCalibrating;
+}
+
+void SetupMotorVals() {
+  const float kStartSpeed = 1150; // Test to find right value
+  motor1Speed = kStartSpeed;
+  motor2Speed = kStartSpeed;
+  motor3Speed = kStartSpeed;
+  motor4Speed = kStartSpeed;
+}
+
 void GetKalmanAngles(){
   angleX = kalmanAngleX.getAngle(accAngleX, gyroXCurr, elapsedTime);
   angleY = kalmanAngleY.getAngle(accAngleY, gyroYCurr, elapsedTime);
 }
-
-
-void FindErrors() {
-
-  angleXError = angleXInput - angleX;
-  angleYError = angleYInput - angleY;
-  angleZError = angleZInput - angleZ;
-
-  velZError = velZInput - velZ.getIntegral();
-
-}
-
 
 void CalcPID() {
     FindErrors();
@@ -320,12 +413,34 @@ void CalcPID() {
 
 }
 
+void FindErrors() {
+
+  angleXError = angleXInput - angleX;
+  angleYError = angleYInput - angleY;
+  angleZError = angleZInput - angleZ;
+
+  velZError = velZInput - velZ.getIntegral();
+
+}
+
+void PowerSwitch() {
+  if (!powerSwitch) { SwitchOff(); }
+}
+
+void SwitchOff() {
+  const float kPWMOff = 1000;
+  motor1Speed = kPWMOff;
+  motor2Speed = kPWMOff;
+  motor3Speed = kPWMOff;
+  motor4Speed = kPWMOff;
+}
+
 void ScaleMotorSpeeds() {
   const float kMaxDegree = 20;
   const float kMaxZVelocity = 0.2;
-  outputAngleX = pidAngleX.GetValue() * 500 / kMaxDegree;
-  outputAngleY = pidAngleY.GetValue() * 500 / kMaxDegree;
-  outputAngleZ = pidAngleZ.GetValue() * 500 / kMaxDegree;
+  outputAngleX = pidAngleX.calcValue() * 500 / kMaxDegree;
+  outputAngleY = pidAngleY.calcValue() * 500 / kMaxDegree;
+  outputAngleZ = pidAngleZ.calcValue() * 500 / kMaxDegree;
   outputVelZ = velZ.getIntegral() * 500 / kMaxZVelocity;
 }
 
@@ -341,12 +456,6 @@ void SetMotorSpeeds() { // STILL HAS TO BE CHANGED
   CutoffMotorSpeeds(); // Make sure motor speeds are within cuttoff points
 }
 
-
-void PowerSwitch() {
-  if (!powerSwitch) { SwitchOff(); }
-}
-
-
 void SendMotorSpeeds() {
   // Two negative, two positive
   motor1.write(motor1Speed);
@@ -354,97 +463,7 @@ void SendMotorSpeeds() {
   motor3.write(motor3Speed);
   motor4.write(motor4Speed);
 }
-
-
-// ||||||||||||||||||||||||||| //
-// || BASE HELPER FUNCTIONS || //
-// ||||||||||||||||||||||||||| //
-
-void SwitchOff() {
-  const float kPWMOff = 1000;
-  motor1Speed = kPWMOff;
-  motor2Speed = kPWMOff;
-  motor3Speed = kPWMOff;
-  motor4Speed = kPWMOff;
-}
-
-void NormalizeRemoteValues() {
-
-  int deadzone = 8;
-
-    // Working Values
-  angleXInput = ch[1];
-  velZInput = ch[2];
-  angleYInput = ch[3];
-  angleZInput = ch[4];
-  powerInput = ch[5];
-
-  // Set to base Value
-  angleXInput -= 500;
-  velZInput -= 500;
-  angleYInput -= 500;
-  angleZInput -= 500;
-
-  // Deadzone
-  if (angleXInput >= -deadzone && angleXInput <= deadzone) { angleXInput = 0; }
-  if (velZInput >= -deadzone && velZInput <= deadzone) { velZInput = 0; }
-  if (angleYInput >= -deadzone && angleYInput <= deadzone) { angleYInput = 0; }
-  if (angleZInput >= -deadzone && angleZInput <= deadzone) { angleZInput = 0; }
-}
-
-void InterpretRemoteValues() {
-  float max_sensor_reading = 500;
-  float max_angle_output = 20; // degrees
-  float angle_const = max_angle_output / max_sensor_reading;
-
-  // Change reciever readings to degrees
-  angleXInput = float(angleXInput * angle_const); // float() required for int division to work correctly
-  velZInput = float(velZInput * angle_const);
-  angleYInput = float(angleYInput * angle_const);
-  angleZInput = float(angleZInput * angle_const);
-}
-
-void ReadPowerSwitchRemoteInput() {
-  if (powerInput < 50 && powerInput > -50) {
-    powerSwitch = true; // Up on the ch5 switch sends a signal around 0, which I set to be on
-  } else { powerSwitch = false; } // If the switch is anything but up, or not working, power is off
-}
-
-void CalcTime() {
-	previousTime = currentTime;        // previous time is stored before the actual time read
-	currentTime = millis();            // current time actual time read
-	elapsedTime = (currentTime - previousTime) / 1000; // convert to seconds
-}
-
-void StoreRemoteValues(){ //Store all values from temporary array
-  //this code reads value from RC reciever from PPM pin (Pin 2 or  3)
-  //this code gives channel values from 0-1000 values
-  unsigned int a, c;
-  a = micros(); //store time value a when pin value falling
-  c = a - remoteTimeDifference;      //calculating  time inbetween two peaks
-  remoteTimeDifference = a;        // 
-  strx[store_x]=c;     //storing 15 value in  array
-  store_x = store_x + 1;
-  if(store_x==15){
-    for(int j=0;j<15;j++){
-      ppm[j]=strx[j];
-    }
-    store_x = 0;
-  }
-}
-
-void AssignRemoteValues(){ //Take stored remote values and output to loop
-  int  i,j,k=0;
-  for(k=14;k>-1;k--){
-    if(ppm[k]>5000) {
-      j=k;
-    }
-  }  //detecting separation  space 10000us in that another array  | CHANGING IT TO 5000us FIXED IT FOR EMIL                   
-  for(i=1;i<=6;i++){
-    ch[i]=(ppm[i+j]-1000);
-  }
-}     
-
+  
 void CutoffMotorSpeeds() {
   const float kMaxMotorSpeed = 1900;
   const float kMinMotorSpeed = 1100; // CHECK!!
@@ -457,6 +476,24 @@ void CutoffMotorSpeeds() {
   if (motor2Speed < kMinMotorSpeed) { motor2Speed = kMinMotorSpeed; }
   if (motor3Speed < kMinMotorSpeed) { motor3Speed = kMinMotorSpeed; }
   if (motor4Speed < kMinMotorSpeed) { motor4Speed = kMinMotorSpeed; }
+}
+
+// ||||||||||||||||||||| //
+// || MISC FUNCTIONS || //
+// ||||||||||||||||||||| //
+
+void TestMotors() {
+  // Takes input from Serial and sends it to the motors with a delay in between 
+  input = Serial.parseFloat();
+  if (input != 0) {
+    motor1.write(input);
+    delay(1000);
+    motor2.write(input);
+    delay(1000);
+    motor3.write(input);
+    delay(1000);
+    motor4.write(input);
+  }
 }
 
 float IIRFilter(float previous_value, float current_value) {
