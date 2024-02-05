@@ -165,16 +165,60 @@ void loop() {
 
     // 4. Calculate errors comparing angular motions to set points
     calculateErrors();
-
+    escTest(1);
     if (isStarted()) {
         // 5. Calculate motors speed with PID controller
-        pidController();
+        // pidController();
+        // justHover();
+        
+        
 
         // compensateBatteryDrop();
     }
 
     // 6. Apply motors speed
     applyMotorSpeed();
+    Serial.print("esc1:");
+    Serial.print(pulse_length_esc1);
+    Serial.print(",");
+    Serial.print("esc2:");
+    Serial.print(pulse_length_esc2);
+    Serial.print(",");
+    Serial.print("Variable_3:");
+    Serial.print(pulse_length_esc3);
+    Serial.print(",");
+    Serial.print("Variable_4:");
+    Serial.println(pulse_length_esc4);
+    
+}
+
+
+void justHover() {
+	// set motors to throttle input from 
+    pulse_length_esc1 = 1300;
+    pulse_length_esc2 = 1300;
+    pulse_length_esc3 = 1300;
+    pulse_length_esc4 = 1300;
+}
+
+void escTest(int num) {
+    if (num == 1) {
+        pulse_length_esc1 = 1100;
+    }
+    if (num == 2) {
+        pulse_length_esc2 = 1050;
+    }
+    if (num == 3) {
+        pulse_length_esc3 = 1050;
+    }
+    if (num == 4) {
+        pulse_length_esc4 = 1050;
+    }
+    delay(1000);
+    pulse_length_esc1 = 1000;
+    pulse_length_esc2 = 1000;
+    pulse_length_esc3 = 1000;
+    pulse_length_esc4 = 1000;
 }
 
 /**
@@ -183,7 +227,7 @@ void loop() {
  *
  * This function might not take more than 2ms to run, which lets 2ms remaining to do other stuff.
  *
- * @see https://www.arduino.cc/en/Reference/PortManipulation
+ * @see https:// www.arduino.cc/en/Reference/PortManipulation
  */
 void applyMotorSpeed() {
     // Refresh rate is 250Hz: send ESC pulses every 4000µs
@@ -348,7 +392,6 @@ void pidController() {
     Serial.print(",");
     Serial.print("Variable_2:");
     Serial.print(pulse_length_esc2);
-    Serial.print(",");
     Serial.print("Variable_3:");
     Serial.print(pulse_length_esc3);
     Serial.print(",");

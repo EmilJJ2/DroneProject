@@ -30,7 +30,7 @@ unsigned long int remoteTimeDifference;
 int strx[15], ppm[15], ch[7], store_x;
 
 const int MPU = 0x68; // MPU6050 I2C address
-float mPI = 3.141592653;
+const double mPI = 3.141592654;
 int sensorBiasConst = 200;
 bool gyroBiasCalibrating = true;
 bool accBiasCalibrating = true;
