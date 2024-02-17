@@ -75,7 +75,7 @@ void setup() {
 
   SetupPID();
 
-  IntializeSetpoint();
+  InitializeSetpoint();
 
 }
 // |||||||||| //
@@ -90,20 +90,28 @@ void loop() {
 
   GetSensorData();
 
-  if (DoneCalibrating()) {
+  if (DoneCalibrating() && powerSwitch) {
 
     if (startup) { SetupMotorVals(); startup = false; } // Run once on startup
 
     GetKalmanAngles();
 
     CalcPID();
+  } else {
+    SwitchOff();
   }
-  // TODO: Use powerswitch for controlled startup and setdown. Add button for full stop
-  PowerSwitch(); // Must be last!!
 
-  SendMotorSpeeds();
+  //SendMotorSpeeds();
   
-  
+  Serial.print("angle_x:");
+  Serial.print(angleX);
+  Serial.print(",");
+  Serial.print("angle_y:");
+  Serial.print(angleYInput);
+  Serial.print(",");
+  Serial.print("power:");
+  Serial.println(powerInput);
+
 
 
 }
@@ -259,18 +267,18 @@ void NormalizeRemoteValues() {
   if (angleZInput >= -deadzone && angleZInput <= deadzone) { angleZInput = 0; }
 }
 
-void InterpretRemoteValues() {
-  float max_sensor_reading = 500;
-  float max_angle_output = 20; // degrees
-  float angle_const = max_angle_output / max_sensor_reading;
+// void InterpretRemoteValues() {
+//   float max_sensor_reading = 500;
+//   float max_angle_output = 20; // degrees
+//   float angle_const = max_angle_output / max_sensor_reading;
 
-  // Change reciever readings to degrees
-  // TODO: Make sure its a float
-  angleXInput = float(angleXInput * angle_const); // float() required for int division to work correctly
-  velZInput = float(velZInput * angle_const);
-  angleYInput = float(angleYInput * angle_const);
-  angleZInput = float(angleZInput * angle_const);
-}
+//   // Change reciever readings to degrees
+//   // TODO: Make sure its a float
+//   angleXInput = float(angleXInput * angle_const); // float() required for int division to work correctly
+//   velZInput = float(velZInput * angle_const);
+//   angleYInput = float(angleYInput * angle_const);
+//   angleZInput = float(angleZInput * angle_const);
+// }
 
 // For Hover Startup
 void SetCurrentInputs() {
@@ -286,7 +294,9 @@ void SetCurrentInputs() {
 void ReadPowerSwitchRemoteInput() {
   if (powerInput < 50 && powerInput > -50) {
     powerSwitch = true; // Up on the ch5 switch sends a signal around 0, which I set to be on
-  } else { powerSwitch = false; } // If the switch is anything but up, or not working, power is off
+  } else if (powerInput < 550 && powerInput > 450) {
+    //TODO setdown
+  } else { powerSwitch = false; SwitchOff(); } // If the switch is anything but up, or not working, power is off
 }
 
 void GetSensorData() {
@@ -341,10 +351,6 @@ void GetAccData() {
     // Calculate Vel Z
     if (abs(accZCurr - 1) < 0.01) { accZCurr = 1; }
     velZ.addValue(accZCurr - 1, elapsedTime);
-
-    Serial.print(accZCurr, 6);
-    Serial.print(" | ");
-    Serial.println(velZ.getIntegral(), 6);
   }
 }
 
@@ -423,9 +429,9 @@ void FindErrors() {
 
 }
 
-void PowerSwitch() {
-  if (!powerSwitch) { SwitchOff(); }
-}
+// void PowerSwitch() {
+//   if (!powerSwitch) { SwitchOff(); }
+// }
 
 void SwitchOff() {
   const float kPWMOff = 1000;

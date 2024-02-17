@@ -9,7 +9,7 @@ Servo esc1, esc2, esc3, esc4;
 int data = 0;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(57600);
 
   esc1.attach(4, 1000, 2000);
   esc2.attach(5, 1000, 2000);
