@@ -22,9 +22,11 @@
 #define MID_PULSE_LENGTH 1500 // Middle motor pulse length in µs
 #define MAX_PULSE_LENGTH 2000 // Maximum motor pulse length in µs
 
+enum class DroneState { POWEROFF, HOVER, SETDOWN, CALIBRATING, STANDBY };
+enum class CH5 { UP, MID, DOWN };
+
 Servo motor1, motor2, motor3, motor4;
 float angleYInput, angleXInput, angleZInput, velZInput, powerInput; // Controller Inputs | TODO: CHECK IF THIS SHOULD BE FLOAT OR INT
-bool powerSwitch = false;
 
 unsigned long int remoteTimeDifference;
 int strx[15], ppm[15], ch[7], store_x;
@@ -40,7 +42,7 @@ float gyroXCurr, gyroYCurr, gyroZCurr, gyroXPrev, gyroYPrev, gyroZPrev, gyroXBia
 float accAngleX, accAngleY, accAngleZ, gyroAngleX, gyroAngleY, gyroAngleZ;
 float roll, pitch, yaw;
 float accErrorX, accErrorY, gyroErrorX, gyroErrorY, gyroErrorZ;
-float elapsedTime, currentTime, previousTime;
+float dt, currentTime, previousTime;
 PID pidAngleX, pidAngleY, pidAngleZ, pidVelZ;
 float angleXError, angleYError, angleZError, velZError;
 Kalman kalmanAngleX, kalmanAngleY, kalmanAngleZ;
@@ -49,7 +51,7 @@ float outputAngleX, outputAngleY, outputAngleZ, outputVelZ;
 Integrator velZ;
 float motor1Speed, motor2Speed, motor3Speed, motor4Speed;
 float input = 0;
-bool startup = true;
+
 
 int accBiasCount = 0;
 int gyroBiasCount = 0;
@@ -66,6 +68,9 @@ float setRoll, setPitch, setYaw, setVelZ;
 
 void setup() {
   Serial.begin(9600);
+
+  DroneState currentState = DroneState::CALIBRATING;
+  CH5 CH5State = CH5::MID;
 
   SetupRemoteInput();
 
@@ -90,18 +95,29 @@ void loop() {
 
   GetSensorData();
 
-  if (DoneCalibrating() && powerSwitch) {
-
-    if (startup) { SetupMotorVals(); startup = false; } // Run once on startup
-
-    GetKalmanAngles();
-
-    CalcPID();
-  } else {
-    SwitchOff();
+  switch(currentState) {
+    case DroneState::POWEROFF:
+      SwitchOff();
+      SendMotorSpeeds();
+      exit(0);
+      break;
+    case DroneState::HOVER:
+      GetKalmanAngles();
+      CalcPID();
+      break;
+    case DroneState::SETDOWN:
+      GetKalmanAngles();
+      CalcPID();
+      break;
+    case DroneState::STANDBY:
+      GetKalmanAngles();
+      CalcPID();
+      break;
+    case DroneState::CALIBRATING:
+      break;
   }
 
-  //SendMotorSpeeds();
+  SendMotorSpeeds();
   
   Serial.print("angle_x:");
   Serial.print(angleX);
@@ -213,7 +229,7 @@ void InitializeSetpoint() {
 void CalcTime() {
 	previousTime = currentTime;        // previous time is stored before the actual time read
 	currentTime = millis();            // current time actual time read
-	elapsedTime = (currentTime - previousTime) / 1000; // convert to seconds
+	dt = (currentTime - previousTime) / 1000; // convert to seconds
 }
 
 
@@ -287,16 +303,48 @@ void SetCurrentInputs() {
   angleZInput = 0;
 
   // velZ has 4 seconds to lift off and then stops. Allows to give time for liftoff without tracking distance
-  float secondsToElevate = 4;
-  velZInput = (setVelZ - (elapsedTime/secondsToElevate) * setVelZ) >= 0 ? 0 : (setVelZ - (elapsedTime/secondsToElevate) * setVelZ) ;
+  float msToElevate = 4000;
+  velZInput = (setVelZ - (currentTime/msToElevate) * setVelZ) <= 0 ? 0 : (setVelZ - (currentTime/msToElevate) * setVelZ) ;
 }
 
 void ReadPowerSwitchRemoteInput() {
   if (powerInput < 50 && powerInput > -50) {
-    powerSwitch = true; // Up on the ch5 switch sends a signal around 0, which I set to be on
+    CH5State = CH5::UP;
   } else if (powerInput < 550 && powerInput > 450) {
-    //TODO setdown
-  } else { powerSwitch = false; SwitchOff(); } // If the switch is anything but up, or not working, power is off
+    CH5State = CH5::MID;
+  } else { 
+    CH5State = CH5::DOWN;
+  }
+
+  /*
+   * DroneState { POWEROFF, HOVER, SETDOWN, CALIBRATING, STANDBY };
+   * CH5 { UP, MID, DOWN };
+   */
+  
+  /*
+  calibrating -> standby    doneCalibrating() == true
+  standby -> hover          mid
+  hover -> powerOff         down
+  hover -> setDown          up (need to pass elapsed time since standby)
+  setDown -> powerOff       down
+  setDown -> standby        4000ms pass
+  */
+  if (currentState == DroneState::CALIBRATING && doneCalibrating()) { // TODO: check doneCalibrating works
+    currentState = DroneState::STANDBY;
+  } else if (currentState == DroneState::STANDBY && CH5State == CH5::MID) {
+    currentState = DroneState::HOVER;
+  } else if (currentState == DroneState::HOVER && CH5State == CH5::DOWN) {
+    currentState = DroneState::POWEROFF;
+  } else if (currentState == DroneState::HOVER && CH5State == CH5::UP) {
+    currentState = DroneState::SETDOWN;
+  } else if (currentState == DroneState::SETDOWN && CH5State == CH5::DOWN) {
+    currentState = DroneState::POWEROFF;
+  } else if (currentState == DroneState::SETDOWN && setDownDone()) { // TODO: finish setDownDone() function
+    currentState = DroneState::SETDOWN;
+  } else {
+    // catch all branch in case something goes wrong
+    currentState = DroneState::POWEROFF;
+  }
 }
 
 void GetSensorData() {
@@ -339,9 +387,9 @@ void GetAccData() {
     accZRaw -= (accZBias / sensorBiasConst) - 1; // TODO: Check if -1 is necessary
 
     // IIR Filter
-    accXCurr = IIRFilter(accXRaw, accXPrev);
-    accYCurr = IIRFilter(accYRaw, accYPrev);
-    accZCurr = IIRFilter(accZRaw, accZPrev);
+    accXCurr = IIRFilter(accXPrev, accXRaw);
+    accYCurr = IIRFilter(accYPrev, accYRaw);
+    accZCurr = IIRFilter(accZPrev, accZRaw);
 
 
     // Accel Angle Calculations
@@ -350,7 +398,7 @@ void GetAccData() {
 
     // Calculate Vel Z
     if (abs(accZCurr - 1) < 0.01) { accZCurr = 1; }
-    velZ.addValue(accZCurr - 1, elapsedTime);
+    velZ.addValue(accZCurr - 1, dt);
   }
 }
 
@@ -386,36 +434,39 @@ void GetGyroData() {
     gyroZRaw -= (gyroZBias / sensorBiasConst);
   }
 
-  gyroXCurr = IIRFilter(gyroXRaw, gyroXPrev); // This was not working for some reason so it is commented out
-  gyroYCurr = IIRFilter(gyroYRaw, gyroYPrev);
-  gyroZCurr = IIRFilter(gyroZRaw, gyroZPrev);
+  gyroXCurr = IIRFilter(gyroXPrev, gyroXRaw); // This was not working for some reason so it is commented out
+  gyroYCurr = IIRFilter(gyroYPrev, gyroYRaw);
+  gyroZCurr = IIRFilter(gyroZPrev, gyroZRaw);
 
 }
 
-bool DoneCalibrating() {
+bool CheckCalibrating() {
+  currentState = DroneState::STANDBY;
   return !accBiasCalibrating && !gyroBiasCalibrating;
 }
 
+/*
 void SetupMotorVals() {
-  const float kStartSpeed = 1150; // Test to find right value
+  const float kStartSpeed = 1070; // Test to find right value
   motor1Speed = kStartSpeed;
   motor2Speed = kStartSpeed;
   motor3Speed = kStartSpeed;
   motor4Speed = kStartSpeed;
 }
+*/
 
 void GetKalmanAngles(){
-  angleX = kalmanAngleX.getAngle(accAngleX, gyroXCurr, elapsedTime);
-  angleY = kalmanAngleY.getAngle(accAngleY, gyroYCurr, elapsedTime);
+  angleX = kalmanAngleX.getAngle(accAngleX, gyroXCurr, dt);
+  angleY = kalmanAngleY.getAngle(accAngleY, gyroYCurr, dt);
 }
 
 void CalcPID() {
     FindErrors();
 
-    pidAngleX.addValue(angleXError, elapsedTime);
-    pidAngleY.addValue(angleYError, elapsedTime);
-    pidAngleZ.addValue(angleZError, elapsedTime);
-    pidVelZ.addValue(velZError, elapsedTime);
+    pidAngleX.addValue(angleXError, dt);
+    pidAngleY.addValue(angleYError, dt);
+    pidAngleZ.addValue(angleZError, dt);
+    pidVelZ.addValue(velZError, dt);
 
 }
 
@@ -428,10 +479,6 @@ void FindErrors() {
   velZError = velZInput - velZ.getIntegral();
 
 }
-
-// void PowerSwitch() {
-//   if (!powerSwitch) { SwitchOff(); }
-// }
 
 void SwitchOff() {
   const float kPWMOff = 1000;
