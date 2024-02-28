@@ -1,3 +1,4 @@
+
 /*
 
 1   2
@@ -24,6 +25,8 @@
 
 enum class DroneState { POWEROFF, HOVER, SETDOWN, CALIBRATING, STANDBY };
 enum class CH5 { UP, MID, DOWN };
+DroneState currentState = DroneState::CALIBRATING;
+CH5 CH5State = CH5::DOWN;
 
 Servo motor1, motor2, motor3, motor4;
 float angleYInput, angleXInput, angleZInput, velZInput, powerInput; // Controller Inputs | TODO: CHECK IF THIS SHOULD BE FLOAT OR INT
@@ -42,7 +45,7 @@ float gyroXCurr, gyroYCurr, gyroZCurr, gyroXPrev, gyroYPrev, gyroZPrev, gyroXBia
 float accAngleX, accAngleY, accAngleZ, gyroAngleX, gyroAngleY, gyroAngleZ;
 float roll, pitch, yaw;
 float accErrorX, accErrorY, gyroErrorX, gyroErrorY, gyroErrorZ;
-float dt, currentTime, previousTime;
+float dt, currentTime, previousTime, stateTime, stateStartTime;
 PID pidAngleX, pidAngleY, pidAngleZ, pidVelZ;
 float angleXError, angleYError, angleZError, velZError;
 Kalman kalmanAngleX, kalmanAngleY, kalmanAngleZ;
@@ -69,8 +72,7 @@ float setRoll, setPitch, setYaw, setVelZ;
 void setup() {
   Serial.begin(9600);
 
-  DroneState currentState = DroneState::CALIBRATING;
-  CH5 CH5State = CH5::MID;
+  stateStartTime = millis();
 
   SetupRemoteInput();
 
@@ -230,6 +232,8 @@ void CalcTime() {
 	previousTime = currentTime;        // previous time is stored before the actual time read
 	currentTime = millis();            // current time actual time read
 	dt = (currentTime - previousTime) / 1000; // convert to seconds
+
+  stateTime = (currentTime - stateStartTime) / 1000;
 }
 
 
@@ -302,9 +306,28 @@ void SetCurrentInputs() {
   angleYInput = 0;
   angleZInput = 0;
 
+  if (currentState == DroneState::HOVER) {
+    Hover();
+  }
+  if (currentState == DroneState::SETDOWN) {
+    Setdown();
+  } else {
+    velZInput = 0;
+  }
+}
+
+void Hover() {
   // velZ has 4 seconds to lift off and then stops. Allows to give time for liftoff without tracking distance
   float msToElevate = 4000;
-  velZInput = (setVelZ - (currentTime/msToElevate) * setVelZ) <= 0 ? 0 : (setVelZ - (currentTime/msToElevate) * setVelZ) ;
+  velZInput = (setVelZ - (currentTime/msToElevate) * setVelZ) <= 0 ? 0 : (setVelZ - (currentTime/msToElevate) * setVelZ);
+  if (velZInput == 0) { currentState = DroneState::STANDBY; }
+}
+
+void Setdown() {
+  // velZ has 4 seconds to lift off and then stops. Allows to give time for liftoff without tracking distance
+  float msToElevate = 4000;
+  velZInput = ((currentTime/msToElevate) * setVelZ - setVelZ) >= 0 ? 0 : ((currentTime/msToElevate) * setVelZ - setVelZ);
+  if (velZInput == 0) { currentState = DroneState::STANDBY; }
 }
 
 void ReadPowerSwitchRemoteInput() {
@@ -322,25 +345,26 @@ void ReadPowerSwitchRemoteInput() {
    */
   
   /*
-  calibrating -> standby    doneCalibrating() == true
+  calibrating -> standby    CheckCalibrating() == true
   standby -> hover          mid
   hover -> powerOff         down
   hover -> setDown          up (need to pass elapsed time since standby)
   setDown -> powerOff       down
-  setDown -> standby        4000ms pass
+  setDown -> standby        4000ms pass [processed in void setDown()]
   */
-  if (currentState == DroneState::CALIBRATING && doneCalibrating()) { // TODO: check doneCalibrating works
+  if (currentState == DroneState::CALIBRATING && CheckCalibrating()) { // TODO: check CheckCalibrating() works
     currentState = DroneState::STANDBY;
+    stateStartTime = millis();
   } else if (currentState == DroneState::STANDBY && CH5State == CH5::MID) {
     currentState = DroneState::HOVER;
+    stateStartTime = millis();
   } else if (currentState == DroneState::HOVER && CH5State == CH5::DOWN) {
     currentState = DroneState::POWEROFF;
   } else if (currentState == DroneState::HOVER && CH5State == CH5::UP) {
     currentState = DroneState::SETDOWN;
+    stateStartTime = millis();
   } else if (currentState == DroneState::SETDOWN && CH5State == CH5::DOWN) {
     currentState = DroneState::POWEROFF;
-  } else if (currentState == DroneState::SETDOWN && setDownDone()) { // TODO: finish setDownDone() function
-    currentState = DroneState::SETDOWN;
   } else {
     // catch all branch in case something goes wrong
     currentState = DroneState::POWEROFF;
@@ -397,8 +421,10 @@ void GetAccData() {
     accAngleX = atan(accYCurr/sqrt(accXCurr*accXCurr + accZCurr*accZCurr)) * 180 / mPI;
 
     // Calculate Vel Z
-    if (abs(accZCurr - 1) < 0.01) { accZCurr = 1; }
-    velZ.addValue(accZCurr - 1, dt);
+    accZCurr = (accZCurr - 1) * 9.8;
+
+    if (abs(accZCurr) < 0.001) { accZCurr = 0; }
+    velZ.addRotatedValue(accXCurr, accYCurr, accZCurr, angleY, angleX, dt);
   }
 }
 
@@ -441,7 +467,6 @@ void GetGyroData() {
 }
 
 bool CheckCalibrating() {
-  currentState = DroneState::STANDBY;
   return !accBiasCalibrating && !gyroBiasCalibrating;
 }
 

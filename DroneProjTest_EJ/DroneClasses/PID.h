@@ -11,6 +11,8 @@ class PID {
 
         float calcValue();
 
+        float getValue() { return iVal.getIntegral(); }
+
     private:
         float pVal, dVal, pWeight, iWeight, dWeight, lastError;
         Integrator iVal;
