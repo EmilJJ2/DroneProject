@@ -43,6 +43,8 @@ bool accBiasCalibrating = true;
 float accXCurr, accYCurr, accZCurr, accXPrev, accYPrev, accZPrev=1, accXBias, accYBias, accZBias;
 float gyroXCurr, gyroYCurr, gyroZCurr, gyroXPrev, gyroYPrev, gyroZPrev, gyroXBias, gyroYBias, gyroZBias;
 float accAngleX, accAngleY, accAngleZ, gyroAngleX, gyroAngleY, gyroAngleZ;
+
+
 float roll, pitch, yaw;
 float accErrorX, accErrorY, gyroErrorX, gyroErrorY, gyroErrorZ;
 float dt, currentTime, previousTime, stateTime, stateStartTime;
@@ -90,12 +92,14 @@ void setup() {
 // |||||||||| //
 
 void loop() {
-
+  
   CalcTime();
   
   DefineRemoteValues();
 
   GetSensorData();
+
+  print();
 
   switch(currentState) {
     case DroneState::POWEROFF:
@@ -117,20 +121,11 @@ void loop() {
       break;
     case DroneState::CALIBRATING:
       break;
+    default:
+      break;
   }
-
-  SendMotorSpeeds();
   
-  Serial.print("angle_x:");
-  Serial.print(angleX);
-  Serial.print(",");
-  Serial.print("angle_y:");
-  Serial.print(angleYInput);
-  Serial.print(",");
-  Serial.print("power:");
-  Serial.println(powerInput);
-
-
+  // SendMotorSpeeds();
 
 }
 
@@ -194,7 +189,7 @@ void SetupIMU() {
   Wire.write(0x6B);                  // Talk to the register 6B
   Wire.write(0x00);                  // Make reset - place a 0 into the 6B register       
   Wire.endTransmission(true);        //end the transmission
-
+  
   // Write to Gyro config
   Wire.beginTransmission(MPU);  
   Wire.write(0x1B); // 8 in Hex represents Bit3 and turns the gyro into 500 deg/s | 0 resets to 250 deg/s (I THINK)
@@ -218,6 +213,7 @@ void SetupPID() {
 } 
 
 void InitializeSetpoint() {
+  Serial.println("|| Initialize Setpoints ||");
   setRoll = 0; // degrees
   setYaw = 0; // degrees
   setPitch = 0; // degrees
@@ -318,15 +314,15 @@ void SetCurrentInputs() {
 
 void Hover() {
   // velZ has 4 seconds to lift off and then stops. Allows to give time for liftoff without tracking distance
-  float msToElevate = 4000;
-  velZInput = (setVelZ - (currentTime/msToElevate) * setVelZ) <= 0 ? 0 : (setVelZ - (currentTime/msToElevate) * setVelZ);
+  float sToElevate = 4;
+  velZInput = (setVelZ - (stateTime/sToElevate) * setVelZ) <= 0 ? 0 : (setVelZ - (stateTime/sToElevate) * setVelZ); //NOTE: why currentTime? seems like this should be stateTime?
   if (velZInput == 0) { currentState = DroneState::STANDBY; }
 }
 
 void Setdown() {
   // velZ has 4 seconds to lift off and then stops. Allows to give time for liftoff without tracking distance
-  float msToElevate = 4000;
-  velZInput = ((currentTime/msToElevate) * setVelZ - setVelZ) >= 0 ? 0 : ((currentTime/msToElevate) * setVelZ - setVelZ);
+  float sToElevate = 4;
+  velZInput = ((stateTime/sToElevate) * setVelZ - setVelZ) >= 0 ? 0 : ((stateTime/sToElevate) * setVelZ - setVelZ); //NOTE: why not check currentTime >= msToElevate?
   if (velZInput == 0) { currentState = DroneState::STANDBY; }
 }
 
@@ -353,6 +349,7 @@ void ReadPowerSwitchRemoteInput() {
   setDown -> standby        4000ms pass [processed in void setDown()]
   */
   if (currentState == DroneState::CALIBRATING && CheckCalibrating()) { // TODO: check CheckCalibrating() works
+    Serial.println("STANDBY");
     currentState = DroneState::STANDBY;
     stateStartTime = millis();
   } else if (currentState == DroneState::STANDBY && CH5State == CH5::MID) {
@@ -366,8 +363,6 @@ void ReadPowerSwitchRemoteInput() {
   } else if (currentState == DroneState::SETDOWN && CH5State == CH5::DOWN) {
     currentState = DroneState::POWEROFF;
   } else {
-    // catch all branch in case something goes wrong
-    currentState = DroneState::POWEROFF;
   }
 }
 
@@ -376,6 +371,8 @@ void GetSensorData() {
   GetGyroData();
 }
 
+float velZTest;
+float accZPast;
 void GetAccData() {
   float accXRaw, accYRaw, accZRaw;
   const float kSSF_Acc_Val = 16384.0; // Sensitivity Sensor Factor for the accelerometer from the datasheet
@@ -420,11 +417,9 @@ void GetAccData() {
     accAngleY = atan(-accXCurr/sqrt(accYCurr*accYCurr + accZCurr*accZCurr)) * 180 / mPI;
     accAngleX = atan(accYCurr/sqrt(accXCurr*accXCurr + accZCurr*accZCurr)) * 180 / mPI;
 
-    // Calculate Vel Z
-    accZCurr = (accZCurr - 1) * 9.8;
-
     if (abs(accZCurr) < 0.001) { accZCurr = 0; }
     velZ.addRotatedValue(accXCurr, accYCurr, accZCurr, angleY, angleX, dt);
+
   }
 }
 
@@ -560,18 +555,21 @@ void CutoffMotorSpeeds() {
 // || MISC FUNCTIONS || //
 // ||||||||||||||||||||| //
 
-void TestMotors() {
-  // Takes input from Serial and sends it to the motors with a delay in between 
-  input = Serial.parseFloat();
-  if (input != 0) {
-    motor1.write(input);
-    delay(1000);
-    motor2.write(input);
-    delay(1000);
-    motor3.write(input);
-    delay(1000);
-    motor4.write(input);
-  }
+void print() {
+  Serial.print("AccZ: ");
+  Serial.print(accZCurr);
+  Serial.print(", ");
+  Serial.print("VelZ: ");
+  Serial.print(velZ.getIntegral());
+  Serial.print(", ");
+  Serial.print("VelZTest: ");
+  Serial.print(velZTest);
+  Serial.print(", ");
+  Serial.print("Roll: ");
+  Serial.print(angleX);
+  Serial.print(", ");
+  Serial.print("Pitch: ");
+  Serial.println(angleY);
 }
 
 float IIRFilter(float previous_value, float current_value) {
